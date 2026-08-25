@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.log
+
+# Visual Studio
+.vs/
+*.vcxproj.user
+x64/
+x86/
+Debug/
+Release/
+
+# OS
+Thumbs.db
+.DS_Store
