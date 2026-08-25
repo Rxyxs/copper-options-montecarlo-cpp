@@ -13,17 +13,34 @@ el precio del cobre. Cero dependencias externas — solo la biblioteca
 estándar (`<random>`, `<thread>`, `<chrono>`) — compilado directamente con
 `cl.exe` de MSVC.
 
-## Por qué este proyecto
+## Valor de negocio
 
 El cobre es uno de los casos más claros donde una opción asiática (de precio
 promedio) importa en la práctica: productores, fundiciones y compradores
 industriales cubren su exposición al precio *promedio* durante un período de
 embarque o producción, no a una fecha de liquidación puntual, porque ese es
-el riesgo que realmente asumen. Valorizar ese payoff no tiene fórmula
-cerrada cuando el promedio es aritmético (solo el caso de promedio
-geométrico la tiene), lo que lo convierte en un problema genuino de Monte
-Carlo — y una buena excusa para hacer bien el trabajo de reducción de
-varianza y paralelización en vez de recurrir a una librería externa.
+el riesgo que realmente asumen — los contratos de venta a concentradora,
+los programas de cobertura trimestrales y los acuerdos de suministro físico
+se valorizan y liquidan habitualmente sobre un promedio, no sobre un fixing
+spot. Valorizar ese payoff no tiene fórmula cerrada cuando el promedio es
+aritmético (solo el caso de promedio geométrico la tiene), lo que lo
+convierte en un problema genuino de Monte Carlo para cualquier mesa que
+necesite marcar o gestionar el riesgo de ese libro.
+
+De ese caso de uso se derivan directamente dos objetivos de diseño:
+
+- **El throughput importa operativamente, no solo académicamente.** Una mesa
+  de riesgo que revalúa un libro de estructuras asiáticas bajo múltiples
+  escenarios (shocks de spot, movimientos de la superficie de volatilidad,
+  remarcados intradía) necesita que cada precio individual vuelva lo
+  suficientemente rápido como para iterar. El motor multi-hilo convierte un
+  pricer de varios segundos en un solo núcleo en uno de menos de un segundo
+  — ver los números de escalamiento medidos más abajo.
+- **La precisión tiene que ser demostrable, no asumida.** Un pricer rápido
+  pero incorrecto es peor que uno lento, así que cada estimación se entrega
+  junto con su error estándar e intervalo de confianza al 95%, y el motor se
+  valida a sí mismo contra un precio analítico conocido en cada ejecución de
+  `--self-test` en lugar de pedir confianza a ciegas.
 
 ## Arquitectura
 
@@ -76,6 +93,22 @@ hay *false sharing*.
 - **RNG**: `std::mt19937_64` alimentando un generador normal Marsaglia-polar
   hecho a mano (sin `sin`/`cos`, solo `sqrt`/`log`, cachea el valor
   sobrante).
+
+## Stack tecnológico
+
+- **Lenguaje**: C++17, solo biblioteca estándar — `<random>`, `<thread>`,
+  `<chrono>`, `<cmath>`. Sin numéricas de terceros, sin Boost.
+- **Toolchain**: `cl.exe` de MSVC (Visual Studio 2019/2022 Build Tools),
+  invocado por `build.ps1`. Sin CMake, sin vcpkg, sin gestor de paquetes de
+  ningún tipo.
+- **Concurrencia**: `std::thread`, un flujo de RNG y un conjunto de buffers
+  de trayectoria por hilo, agregación de resultados con una sola escritura
+  por hilo — sin mutexes, sin atómicos, sin false sharing en la ruta
+  caliente.
+- **Métodos cuantitativos**: difusión de reversión a la media de un factor
+  (Schwartz, 1997) y GBM, muestreo de transición exacta (no Euler),
+  valorización cerrada geométrico-asiática de Kemna-Vorst (1990), variables
+  antitéticas y un estimador de variable de control.
 
 ## Compilación
 
@@ -158,7 +191,6 @@ copper-options-montecarlo-cpp/
 ├── src/
 │   └── main.cpp            # CLI
 ├── build.ps1
-├── CLAUDE.md
 ├── LICENSE
 └── README.md / README.es.md
 ```
@@ -166,3 +198,7 @@ copper-options-montecarlo-cpp/
 ## Licencia
 
 MIT — ver [LICENSE](LICENSE).
+
+## Autor
+
+**Pablo Reyes** — [github.com/Rxyxs](https://github.com/Rxyxs)

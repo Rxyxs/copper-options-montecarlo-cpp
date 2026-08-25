@@ -12,16 +12,31 @@ C++17, that prices arithmetic-average Asian options on copper. Zero external
 dependencies — standard library only (`<random>`, `<thread>`, `<chrono>`) —
 built directly with MSVC's `cl.exe`.
 
-## Why this project
+## Business value
 
 Copper is one of the clearest cases where an Asian (average-price) option
 matters in practice: producers, smelters, and industrial buyers hedge
 exposure to the *average* price over a shipment or production period, not a
-single settlement date, because that's the risk they actually carry. Pricing
-that payoff has no closed form once the average is arithmetic (only the
-geometric-average case does), which makes it a genuine Monte Carlo problem —
-and a good excuse to do the variance-reduction and multi-threading work
-properly rather than reach for a library.
+single settlement date, because that's the risk they actually carry —
+concentrator offtake contracts, quarterly hedging programs, and physical
+supply agreements are routinely priced and settled off an average, not a
+spot fixing. Pricing that payoff has no closed form once the average is
+arithmetic (only the geometric-average case does), which makes it a genuine
+Monte Carlo problem for any desk that needs to mark or risk-manage this book.
+
+Two design goals follow directly from that use case:
+
+- **Throughput matters operationally, not just academically.** A risk desk
+  revaluing a book of Asian structures under multiple scenarios (spot
+  shocks, vol surface bumps, intraday re-marks) needs each individual price
+  to come back fast enough to iterate. The multi-threaded engine here turns
+  a multi-second single-core pricer into a sub-second one — see the measured
+  scaling numbers below.
+- **Precision has to be provable, not assumed.** A pricer that's fast but
+  wrong is worse than a slow one, so every estimate ships with its standard
+  error and 95% confidence interval, and the engine validates itself against
+  a known analytic price on every `--self-test` run rather than asking for
+  trust.
 
 ## Architecture
 
@@ -69,6 +84,20 @@ finishes, so there's no false sharing either.
   measured numbers below.
 - **RNG**: `std::mt19937_64` feeding a hand-rolled Marsaglia-polar normal
   generator (no `sin`/`cos`, just `sqrt`/`log`, caches the spare deviate).
+
+## Tech stack
+
+- **Language**: C++17, standard library only — `<random>`, `<thread>`,
+  `<chrono>`, `<cmath>`. No third-party numerics, no Boost.
+- **Toolchain**: MSVC `cl.exe` (Visual Studio 2019/2022 Build Tools), driven
+  by `build.ps1`. No CMake, no vcpkg, no package manager of any kind.
+- **Concurrency**: `std::thread`, one RNG stream and one set of path buffers
+  per thread, single-write-per-thread result aggregation — no mutexes, no
+  atomics, no false sharing in the hot path.
+- **Quantitative methods**: single-factor Schwartz (1997) mean-reverting
+  diffusion and GBM, exact (non-Euler) transition sampling, Kemna-Vorst
+  (1990) closed-form geometric-Asian pricing, antithetic variates, and a
+  control-variate estimator.
 
 ## Build
 
@@ -148,7 +177,6 @@ copper-options-montecarlo-cpp/
 ├── src/
 │   └── main.cpp            # CLI
 ├── build.ps1
-├── CLAUDE.md
 ├── LICENSE
 └── README.md / README.es.md
 ```
@@ -156,3 +184,7 @@ copper-options-montecarlo-cpp/
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Author
+
+**Pablo Reyes** — [github.com/Rxyxs](https://github.com/Rxyxs)
