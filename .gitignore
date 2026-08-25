@@ -22,5 +22,3 @@ Thumbs.db
 .DS_Store
 
 # Internal tooling config (not part of the published project)
-CLAUDE.md
-.claude/
