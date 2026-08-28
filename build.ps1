@@ -26,7 +26,7 @@ Write-Host "Building copper_mc.exe ($config)..."
 
 # Run cl.exe inside a cmd.exe that has sourced vcvars64.bat, since MSVC's
 # environment (INCLUDE/LIB/PATH) is only set for that process tree.
-$cmd = "call `"$vcvars`" >nul && cl.exe /std:c++17 /EHsc /W4 /nologo $optFlags " +
+$cmd = "call `"$vcvars`" >nul && cl.exe /std:c++20 /EHsc /W4 /nologo $optFlags " +
        "/I `"$root\include`" `"$root\src\main.cpp`" " +
        "/Fe:`"$binDir\copper_mc.exe`" /Fo:`"$binDir\\`""
 

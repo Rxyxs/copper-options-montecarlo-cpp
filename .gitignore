@@ -17,6 +17,14 @@ x86/
 Debug/
 Release/
 
+# CMake
+build/
+build_cmake/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+
 # OS
 Thumbs.db
 .DS_Store

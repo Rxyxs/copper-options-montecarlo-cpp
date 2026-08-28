@@ -1,7 +1,12 @@
 #pragma once
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <execution>
+#include <functional>
+#include <numeric>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 #include "AsianOption.h"
@@ -13,7 +18,13 @@
 
 struct SimulationConfig {
     size_t numPaths = 1'000'000;
-    unsigned numThreads = 0;  // 0 = std::thread::hardware_concurrency()
+    // 0 = parallel (std::execution::par_unseq, runtime picks worker count);
+    // 1 = forced sequential (std::execution::seq) -- the single-thread
+    // baseline `--benchmark-scaling` compares against. Any other value is
+    // treated the same as 0: C++20's parallel execution policies do not
+    // expose portable control over an exact worker-thread count, unlike
+    // the hand-rolled std::thread chunking this replaced.
+    unsigned numThreads = 0;
     bool antithetic = true;
     bool controlVariate = true;  // only applies when spec.averaging == Arithmetic
     uint64_t seed = 42;
@@ -29,56 +40,93 @@ struct SimulationResult {
     unsigned numThreads = 0;
 };
 
+namespace detail {
+
+// A generous fixed upper bound on averaging fixings lets each parallel work
+// item simulate its path(s) into a stack-allocated std::array -- no heap
+// allocation per path, and no shared mutable state between work items, so
+// std::execution::par_unseq has nothing to synchronize.
+inline constexpr size_t kMaxAveragingPoints = 4096;
+
+struct Accum {
+    double sum = 0.0;
+    double sumSq = 0.0;
+    size_t count = 0;
+};
+
+inline Accum operator+(const Accum& a, const Accum& b) {
+    return {a.sum + b.sum, a.sumSq + b.sumSq, a.count + b.count};
+}
+
+// splitmix64 (Vigna): cheap, well-mixed derivation of an independent RNG
+// seed per work item from (baseSeed, workItemIndex). This is what makes
+// the parallel-algorithm version reproducible *and* thread-count-agnostic
+// -- unlike the old std::thread version, the result no longer depends on
+// how many paths happened to land on which worker.
+inline uint64_t splitmix64(uint64_t x) {
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+}
+
+}  // namespace detail
+
 class MonteCarloEngine {
 public:
     static SimulationResult price(const MarketParams& mp, const AsianOptionSpec& spec,
                                    const SimulationConfig& cfg) {
-        const unsigned numThreads =
-            cfg.numThreads == 0 ? std::max(1u, std::thread::hardware_concurrency()) : cfg.numThreads;
+        using namespace detail;
+
+        if (spec.numAveragingPoints > kMaxAveragingPoints) {
+            throw std::runtime_error("numAveragingPoints exceeds MonteCarloEngine::kMaxAveragingPoints");
+        }
 
         const double discount = std::exp(-mp.r * spec.maturity);
-        const double geoClosedForm = ClosedFormAsian::geometricAsianPrice(mp, spec);
+        const bool useControlVariate = cfg.controlVariate && spec.averaging == AveragingType::Arithmetic
+                                        && mp.model != ModelType::Heston;
+        // Heston has no closed-form geometric-Asian anchor (ClosedFormAsian
+        // assumes constant sigma), so the geometric control variate is only
+        // applied for GBM/Schwartz -- Heston pricing falls back to plain MC
+        // (still with antithetic variates), documented in the README.
+        const double geoClosedForm =
+            useControlVariate ? ClosedFormAsian::geometricAsianPrice(mp, spec) : 0.0;
         const double dt = spec.maturity / static_cast<double>(spec.numAveragingPoints);
 
-        // One accumulator slot per thread. Each worker writes to its own
-        // slot exactly once, after finishing its entire chunk, so there is
-        // no cross-thread synchronization or false sharing in the hot loop.
-        std::vector<double> threadSum(numThreads, 0.0);
-        std::vector<double> threadSumSq(numThreads, 0.0);
-        std::vector<size_t> threadCount(numThreads, 0);
+        const size_t pairPaths = cfg.antithetic ? cfg.numPaths / 2 : 0;
+        const size_t soloPaths = cfg.numPaths - pairPaths * 2;
+        const size_t numWorkItems = pairPaths + soloPaths;
 
-        const size_t basePaths = cfg.numPaths / numThreads;
-        const size_t remainder = cfg.numPaths % numThreads;
+        std::vector<size_t> workItems(numWorkItems);
+        std::iota(workItems.begin(), workItems.end(), size_t{0});
+
+        auto simulateOne = [&](size_t workIndex) -> Accum {
+            const uint64_t itemSeed = cfg.seed ^ splitmix64(static_cast<uint64_t>(workIndex));
+
+            if (workIndex < pairPaths) {
+                return simulatePair(mp, spec, dt, discount, useControlVariate, geoClosedForm,
+                                     itemSeed);
+            }
+            return simulateSolo(mp, spec, dt, discount, useControlVariate, geoClosedForm, itemSeed);
+        };
 
         Timer timer;
-        std::vector<std::thread> workers;
-        workers.reserve(numThreads);
-
-        for (unsigned t = 0; t < numThreads; ++t) {
-            const size_t chunk = basePaths + (t < remainder ? 1 : 0);
-            workers.emplace_back([&, t, chunk]() {
-                runWorker(t, chunk, mp, spec, cfg, dt, discount, geoClosedForm, threadSum[t],
-                          threadSumSq[t], threadCount[t]);
-            });
+        Accum total;
+        if (cfg.numThreads == 1) {
+            total = std::transform_reduce(std::execution::seq, workItems.begin(), workItems.end(),
+                                           Accum{}, std::plus<>{}, simulateOne);
+        } else {
+            total = std::transform_reduce(std::execution::par_unseq, workItems.begin(),
+                                           workItems.end(), Accum{}, std::plus<>{}, simulateOne);
         }
-        for (auto& w : workers) w.join();
         const double elapsed = timer.elapsedSeconds();
 
-        double totalSum = 0.0, totalSumSq = 0.0;
-        size_t totalCount = 0;
-        for (unsigned t = 0; t < numThreads; ++t) {
-            totalSum += threadSum[t];
-            totalSumSq += threadSumSq[t];
-            totalCount += threadCount[t];
-        }
-
-        const double mean = totalSum / static_cast<double>(totalCount);
+        const double mean = total.sum / static_cast<double>(total.count);
         const double variance =
-            totalCount > 1
-                ? (totalSumSq / static_cast<double>(totalCount) - mean * mean) *
-                      static_cast<double>(totalCount) / static_cast<double>(totalCount - 1)
-                : 0.0;
-        const double stdErr = std::sqrt(std::max(variance, 0.0) / static_cast<double>(totalCount));
+            total.count > 1 ? (total.sumSq / static_cast<double>(total.count) - mean * mean) *
+                                   static_cast<double>(total.count) / static_cast<double>(total.count - 1)
+                             : 0.0;
+        const double stdErr = std::sqrt(std::max(variance, 0.0) / static_cast<double>(total.count));
 
         SimulationResult result;
         result.price = mean;
@@ -87,73 +135,62 @@ public:
         result.elapsedSeconds = elapsed;
         result.pathsPerSecond = static_cast<double>(cfg.numPaths) / elapsed;
         result.numPaths = cfg.numPaths;
-        result.numThreads = numThreads;
+        result.numThreads =
+            cfg.numThreads == 1 ? 1u : std::max(1u, std::thread::hardware_concurrency());
         return result;
     }
 
 private:
-    static void runWorker(unsigned threadIndex, size_t chunkPaths, const MarketParams& mp,
-                           const AsianOptionSpec& spec, const SimulationConfig& cfg, double dt,
-                           double discount, double geoClosedForm, double& outSum, double& outSumSq,
-                           size_t& outCount) {
-        if (chunkPaths == 0) {
-            outSum = 0.0;
-            outSumSq = 0.0;
-            outCount = 0;
-            return;
+    static double sampleFromPath(const double* p, const AsianOptionSpec& spec, double discount,
+                                  bool useControlVariate, double geoClosedForm) {
+        const double avgTarget = averagePrice(p, spec.numAveragingPoints, spec.averaging);
+        const double discountedTarget = discount * payoff(avgTarget, spec);
+        if (!useControlVariate) return discountedTarget;
+
+        const double avgGeo = averagePrice(p, spec.numAveragingPoints, AveragingType::Geometric);
+        const double discountedGeo = discount * payoff(avgGeo, spec);
+        return discountedTarget - discountedGeo + geoClosedForm;
+    }
+
+    static detail::Accum simulateSolo(const MarketParams& mp, const AsianOptionSpec& spec, double dt,
+                                       double discount, bool useControlVariate, double geoClosedForm,
+                                       uint64_t seed) {
+        std::array<double, detail::kMaxAveragingPoints + 1> path{};
+        FastGaussianRNG rng(seed);
+
+        if (mp.model == ModelType::Heston) {
+            simulateHestonPath(path.data(), spec.numAveragingPoints, dt, mp, rng);
+        } else {
+            simulatePath(path.data(), spec.numAveragingPoints, dt, mp, rng);
         }
+        const double sample =
+            sampleFromPath(path.data(), spec, discount, useControlVariate, geoClosedForm);
+        return {sample, sample * sample, 1};
+    }
 
-        // Distinct, non-overlapping seed streams per thread.
-        FastGaussianRNG rng(cfg.seed + static_cast<uint64_t>(threadIndex) * 0x9E3779B97F4A7C15ULL);
+    static detail::Accum simulatePair(const MarketParams& mp, const AsianOptionSpec& spec, double dt,
+                                       double discount, bool useControlVariate, double geoClosedForm,
+                                       uint64_t seed) {
+        std::array<double, detail::kMaxAveragingPoints + 1> path{};
+        std::array<double, detail::kMaxAveragingPoints + 1> antiPath{};
+        FastGaussianRNG rng(seed);
 
-        std::vector<double> path(spec.numAveragingPoints + 1);
-        std::vector<double> antiPath;
-        std::vector<double> normals;
-        const bool useAntithetic = cfg.antithetic;
-        if (useAntithetic) {
-            antiPath.resize(spec.numAveragingPoints + 1);
-            normals.resize(spec.numAveragingPoints);
-        }
-
-        double localSum = 0.0;
-        double localSumSq = 0.0;
-        size_t localCount = 0;
-
-        const bool useControlVariate = cfg.controlVariate && spec.averaging == AveragingType::Arithmetic;
-
-        auto accumulateOnePath = [&](const double* p) {
-            const double avgTarget = averagePrice(p, spec.numAveragingPoints, spec.averaging);
-            const double discountedTarget = discount * payoff(avgTarget, spec);
-
-            double sample = discountedTarget;
-            if (useControlVariate) {
-                const double avgGeo = averagePrice(p, spec.numAveragingPoints, AveragingType::Geometric);
-                const double discountedGeo = discount * payoff(avgGeo, spec);
-                sample = discountedTarget - discountedGeo + geoClosedForm;
-            }
-            localSum += sample;
-            localSumSq += sample * sample;
-            ++localCount;
-        };
-
-        const size_t pairPaths = useAntithetic ? chunkPaths / 2 : 0;
-        const size_t soloPaths = chunkPaths - pairPaths * 2;
-
-        for (size_t p = 0; p < pairPaths; ++p) {
+        double s1, s2;
+        if (mp.model == ModelType::Heston) {
+            // Two independent normals per step -> twice the buffer.
+            std::array<double, 2 * detail::kMaxAveragingPoints> normalPairs{};
+            simulateHestonPathRecording(path.data(), normalPairs.data(), spec.numAveragingPoints, dt,
+                                         mp, rng);
+            simulateHestonPathFromNormals(antiPath.data(), normalPairs.data(), spec.numAveragingPoints,
+                                           dt, mp, /*negate=*/true);
+        } else {
+            std::array<double, detail::kMaxAveragingPoints> normals{};
             simulatePathRecording(path.data(), normals.data(), spec.numAveragingPoints, dt, mp, rng);
-            accumulateOnePath(path.data());
-
             simulatePathFromNormals(antiPath.data(), normals.data(), spec.numAveragingPoints, dt, mp,
                                      /*negate=*/true);
-            accumulateOnePath(antiPath.data());
         }
-        for (size_t p = 0; p < soloPaths; ++p) {
-            simulatePath(path.data(), spec.numAveragingPoints, dt, mp, rng);
-            accumulateOnePath(path.data());
-        }
-
-        outSum = localSum;
-        outSumSq = localSumSq;
-        outCount = localCount;
+        s1 = sampleFromPath(path.data(), spec, discount, useControlVariate, geoClosedForm);
+        s2 = sampleFromPath(antiPath.data(), spec, discount, useControlVariate, geoClosedForm);
+        return {s1 + s2, s1 * s1 + s2 * s2, 2};
     }
 };

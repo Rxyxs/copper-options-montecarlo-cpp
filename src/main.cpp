@@ -21,6 +21,7 @@ struct CliOptions {
     SimulationConfig cfg{};
     bool selfTest = false;
     bool benchmarkScaling = false;
+    bool benchmarkPaths = false;
     bool showHelp = false;
 };
 
@@ -39,15 +40,21 @@ void printHelp(const char* exe) {
         "  --theta-level F       equilibrium price level (Schwartz)  (default 4.30)\n"
         "  --averaging-points N  number of fixings                   (default 252)\n"
         "  --type call|put                                           (default call)\n"
-        "  --model gbm|schwartz                                      (default schwartz)\n\n"
+        "  --model gbm|schwartz|heston                               (default schwartz)\n"
+        "  --heston-v0 F         initial variance                    (default 0.0784)\n"
+        "  --heston-kappa-v F    variance mean-reversion speed        (default 2.0)\n"
+        "  --heston-theta-v F    long-run variance                   (default 0.0784)\n"
+        "  --heston-xi F         vol-of-vol                           (default 0.35)\n"
+        "  --heston-rho F        price/variance correlation           (default -0.55)\n\n"
         "Simulation controls:\n"
         "  --paths N             number of Monte Carlo paths         (default 4000000)\n"
-        "  --threads N           worker threads, 0 = all cores       (default 0)\n"
+        "  --threads N           1 = sequential, else parallel        (default 0, parallel)\n"
         "  --seed N              base RNG seed                       (default 42)\n"
         "  --no-antithetic       disable antithetic variates\n"
         "  --no-control-variate  disable geometric control variate\n"
-        "  --self-test           validate engine vs. Kemna-Vorst closed form\n"
+        "  --self-test           validate engine vs. closed form / parity\n"
         "  --benchmark-scaling   also run single-threaded, report measured speedup\n"
+        "  --benchmark-paths     report elapsed ms across a path-count sweep\n"
         "  --help                show this message\n";
 }
 
@@ -85,12 +92,19 @@ bool parseArgs(int argc, char** argv, CliOptions& opt) {
             opt.spec.type = (v == "put") ? OptionType::Put : OptionType::Call;
         } else if (a == "--model") {
             const std::string v = argv[++i];
-            opt.mp.model = (v == "gbm") ? ModelType::GeometricBrownianMotion
-                                         : ModelType::SchwartzMeanReverting;
-        } else if (a == "--no-antithetic") opt.cfg.antithetic = false;
+            if (v == "gbm") opt.mp.model = ModelType::GeometricBrownianMotion;
+            else if (v == "heston") opt.mp.model = ModelType::Heston;
+            else opt.mp.model = ModelType::SchwartzMeanReverting;
+        } else if (a == "--heston-v0") nextDouble(opt.mp.v0);
+        else if (a == "--heston-kappa-v") nextDouble(opt.mp.kappaV);
+        else if (a == "--heston-theta-v") nextDouble(opt.mp.thetaV);
+        else if (a == "--heston-xi") nextDouble(opt.mp.xiV);
+        else if (a == "--heston-rho") nextDouble(opt.mp.rho);
+        else if (a == "--no-antithetic") opt.cfg.antithetic = false;
         else if (a == "--no-control-variate") opt.cfg.controlVariate = false;
         else if (a == "--self-test") opt.selfTest = true;
         else if (a == "--benchmark-scaling") opt.benchmarkScaling = true;
+        else if (a == "--benchmark-paths") opt.benchmarkPaths = true;
         else if (a == "--help" || a == "-h") { opt.showHelp = true; return true; }
         else {
             std::cerr << "Unknown option: " << a << "\n";
@@ -101,7 +115,11 @@ bool parseArgs(int argc, char** argv, CliOptions& opt) {
 }
 
 std::string modelName(ModelType m) {
-    return m == ModelType::GeometricBrownianMotion ? "GBM" : "Schwartz mean-reverting";
+    switch (m) {
+        case ModelType::GeometricBrownianMotion: return "GBM";
+        case ModelType::Heston: return "Heston stochastic-volatility";
+        default: return "Schwartz mean-reverting";
+    }
 }
 
 void printResult(const char* label, const SimulationResult& r) {
@@ -149,6 +167,98 @@ int runSelfTest(const MarketParams& mpIn, size_t numAveragingPoints, uint64_t se
     return pass ? 0 : 1;
 }
 
+// Heston has no simple closed-form arithmetic-Asian price to check against,
+// so its self-test uses a model-agnostic identity instead: put-call parity
+// for an arithmetic-average option. Under *any* risk-neutral diffusion
+// where S_t remains a martingale after discounting (true for GBM, Schwartz,
+// and Heston alike -- stochastic volatility changes the *distribution* of
+// S_t but not its risk-neutral expectation), E[S_t] = S0 * e^{(r-q)t}, so
+// the expected arithmetic average is a model-independent closed form:
+//   E[Average] = (1/N) * sum_i S0 * e^{(r-q) * t_i}
+// and therefore  Call - Put = e^{-rT} * (E[Average] - K)  exactly, for any
+// of the three models. This is a genuine correctness check on the Heston
+// path simulator and the payoff/discounting logic, not a weaker one just
+// because Heston lacks an analytic option price.
+int runHestonParityTest(const MarketParams& mpIn, const AsianOptionSpec& specIn, uint64_t seed) {
+    std::cout << "=== Self-test: Heston put-call parity (arithmetic average) ===\n";
+    std::cout << "(model-independent identity: works for any risk-neutral diffusion)\n\n";
+
+    MarketParams mp = mpIn;
+    mp.model = ModelType::Heston;
+
+    double forwardAvgSum = 0.0;
+    const double dt = specIn.maturity / static_cast<double>(specIn.numAveragingPoints);
+    for (size_t i = 1; i <= specIn.numAveragingPoints; ++i) {
+        const double t = dt * static_cast<double>(i);
+        forwardAvgSum += mp.S0 * std::exp((mp.r - mp.q) * t);
+    }
+    const double forwardAvg = forwardAvgSum / static_cast<double>(specIn.numAveragingPoints);
+    const double discount = std::exp(-mp.r * specIn.maturity);
+    const double expectedDiff = discount * (forwardAvg - specIn.strike);
+
+    AsianOptionSpec callSpec = specIn;
+    callSpec.type = OptionType::Call;
+    AsianOptionSpec putSpec = specIn;
+    putSpec.type = OptionType::Put;
+
+    SimulationConfig cfg;
+    cfg.numPaths = 2'000'000;
+    cfg.controlVariate = false;  // no geometric anchor available for Heston (see MonteCarloEngine)
+    cfg.seed = seed;
+
+    const SimulationResult callResult = MonteCarloEngine::price(mp, callSpec, cfg);
+    const SimulationResult putResult = MonteCarloEngine::price(mp, putSpec, cfg);
+    const double mcDiff = callResult.price - putResult.price;
+
+    // Independent draws for call/put, so combined stderr adds in quadrature.
+    const double combinedStdErr =
+        std::sqrt(callResult.stdError * callResult.stdError + putResult.stdError * putResult.stdError);
+    const double diff = std::abs(mcDiff - expectedDiff);
+    const double tolerance = 4.0 * combinedStdErr;
+    const bool pass = diff <= tolerance;
+
+    std::cout << std::fixed << std::setprecision(6);
+    std::cout << "  Call price          : " << callResult.price << " USD\n";
+    std::cout << "  Put price           : " << putResult.price << " USD\n";
+    std::cout << "  MC   Call - Put     : " << mcDiff << "\n";
+    std::cout << "  Parity Call - Put   : " << expectedDiff << " (model-independent)\n";
+    std::cout << "  |difference|        : " << diff << " (tolerance " << tolerance << ")\n";
+    std::cout << "  Result              : " << (pass ? "PASS" : "FAIL") << "\n\n";
+
+    return pass ? 0 : 1;
+}
+
+void runPathBenchmark(const MarketParams& mp, const AsianOptionSpec& spec, uint64_t seed) {
+    // Saves/restores stream formatting state explicitly: leaving a stray
+    // `setprecision(0)` active after this function was a real bug caught by
+    // actually running the program end to end -- it silently truncated
+    // every subsequent floating-point print (e.g. "Spot / Strike : 4 / 4"
+    // instead of "4.5 / 4.5") for the rest of the run.
+    std::ios::fmtflags savedFlags(std::cout.flags());
+    std::streamsize savedPrecision = std::cout.precision();
+
+    std::cout << "=== Benchmark: elapsed time vs. path count ===\n";
+    std::cout << "(std::execution::par_unseq, " << std::thread::hardware_concurrency()
+              << " hardware threads)\n\n";
+    std::cout << std::right << std::setw(14) << "Paths" << std::setw(16) << "Elapsed (ms)"
+              << std::setw(24) << "Throughput (paths/s)" << "\n";
+
+    const size_t pathCounts[] = {100'000, 500'000, 1'000'000, 2'000'000, 4'000'000, 8'000'000};
+    for (size_t n : pathCounts) {
+        SimulationConfig cfg;
+        cfg.numPaths = n;
+        cfg.seed = seed;
+        const SimulationResult r = MonteCarloEngine::price(mp, spec, cfg);
+        std::cout << std::right << std::setw(14) << n << std::setw(16) << std::fixed
+                  << std::setprecision(1) << (r.elapsedSeconds * 1000.0) << std::setw(24)
+                  << std::setprecision(0) << r.pathsPerSecond << "\n";
+    }
+    std::cout << "\n";
+
+    std::cout.flags(savedFlags);
+    std::cout.precision(savedPrecision);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -165,7 +275,20 @@ int main(int argc, char** argv) {
     int selfTestStatus = 0;
     if (opt.selfTest) {
         selfTestStatus = runSelfTest(opt.mp, opt.spec.numAveragingPoints, opt.cfg.seed);
+        const int hestonStatus = runHestonParityTest(opt.mp, opt.spec, opt.cfg.seed);
+        selfTestStatus = (selfTestStatus != 0) ? selfTestStatus : hestonStatus;
     }
+
+    if (opt.benchmarkPaths) {
+        runPathBenchmark(opt.mp, opt.spec, opt.cfg.seed);
+    }
+
+    // Both self-tests print with std::fixed + a nonstandard precision and
+    // never reset it, so without this the header block below would inherit
+    // that formatting (e.g. "4.500000" instead of "4.5") whenever
+    // --self-test was also passed.
+    std::cout.unsetf(std::ios::floatfield);
+    std::cout.precision(6);
 
     std::cout << "=== Copper Asian Option -- Monte Carlo Pricing ===\n\n";
     std::cout << "Model               : " << modelName(opt.mp.model) << "\n";
@@ -175,8 +298,11 @@ int main(int argc, char** argv) {
     std::cout << "Volatility / Rate   : " << opt.mp.sigma << " / " << opt.mp.r << "\n";
     std::cout << "Type                : " << (opt.spec.type == OptionType::Call ? "Call" : "Put")
               << " (arithmetic average)\n";
+    const bool cvActuallyUsed = opt.cfg.controlVariate && opt.mp.model != ModelType::Heston;
     std::cout << "Antithetic / CV     : " << (opt.cfg.antithetic ? "on" : "off") << " / "
-              << (opt.cfg.controlVariate ? "on" : "off") << "\n";
+              << (cvActuallyUsed ? "on" : (opt.mp.model == ModelType::Heston ? "off (n/a for Heston)"
+                                                                              : "off"))
+              << "\n";
     std::cout << "Hardware threads    : " << std::thread::hardware_concurrency() << "\n\n";
 
     const SimulationResult full = MonteCarloEngine::price(opt.mp, opt.spec, opt.cfg);

@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath>
 #include <cstddef>
+#include <utility>
 #include "MarketModel.h"
 #include "RandomEngine.h"
 
@@ -64,4 +65,64 @@ inline void simulatePathFromNormals(double* path, const double* normals, size_t 
                                      double dt, const MarketParams& mp, bool negate) {
     const double sign = negate ? -1.0 : 1.0;
     simulatePathGeneric(path, numSteps, dt, mp, [&](size_t i) { return sign * normals[i]; });
+}
+
+// --- Heston stochastic-volatility path simulation -------------------------
+//
+// Needs two correlated normals per step (one drives the price, one the
+// variance), so it doesn't fit the single-normal-per-step `NormalSource`
+// abstraction above -- it gets its own small family of functions instead,
+// mirroring the fresh/recording/replay pattern for antithetic support.
+// `normalPairSource(i)` returns a `std::pair<double,double>` of
+// *independent* standard normals (zIndepPrice, zIndepVol) for step i; the
+// correlation `rho` is applied inside via zVol = rho*zPrice + sqrt(1-rho^2)*zIndepVol.
+template <typename NormalPairSource>
+inline void simulateHestonPathGeneric(double* path, size_t numSteps, double dt,
+                                       const MarketParams& mp, NormalPairSource&& nextZPair) {
+    path[0] = mp.S0;
+    const double sqrtDt = std::sqrt(dt);
+    const double sqrtOneMinusRho2 = std::sqrt(std::max(0.0, 1.0 - mp.rho * mp.rho));
+
+    double S = mp.S0;
+    double V = mp.v0;
+
+    for (size_t i = 1; i <= numSteps; ++i) {
+        const auto [zPrice, zVolIndep] = nextZPair(i - 1);
+        const double zVol = mp.rho * zPrice + sqrtOneMinusRho2 * zVolIndep;
+
+        const double Vplus = std::max(V, 0.0);  // full-truncation: use max(V,0) in drift/diffusion
+        const double sqrtVplus = std::sqrt(Vplus);
+
+        S *= std::exp((mp.r - mp.q - 0.5 * Vplus) * dt + sqrtVplus * sqrtDt * zPrice);
+        V = V + mp.kappaV * (mp.thetaV - Vplus) * dt + mp.xiV * sqrtVplus * sqrtDt * zVol;
+
+        path[i] = S;
+    }
+}
+
+inline void simulateHestonPath(double* path, size_t numSteps, double dt, const MarketParams& mp,
+                                FastGaussianRNG& rng) {
+    simulateHestonPathGeneric(path, numSteps, dt, mp,
+                               [&](size_t) { return std::pair{rng.next(), rng.next()}; });
+}
+
+// Records the *independent* normal pairs (not the already-correlated zVol)
+// so the antithetic replay below can negate both underlying shocks.
+inline void simulateHestonPathRecording(double* path, double* normalPairsOut, size_t numSteps,
+                                         double dt, const MarketParams& mp, FastGaussianRNG& rng) {
+    simulateHestonPathGeneric(path, numSteps, dt, mp, [&](size_t i) {
+        const double zPrice = rng.next();
+        const double zVolIndep = rng.next();
+        normalPairsOut[2 * i] = zPrice;
+        normalPairsOut[2 * i + 1] = zVolIndep;
+        return std::pair{zPrice, zVolIndep};
+    });
+}
+
+inline void simulateHestonPathFromNormals(double* path, const double* normalPairs, size_t numSteps,
+                                           double dt, const MarketParams& mp, bool negate) {
+    const double sign = negate ? -1.0 : 1.0;
+    simulateHestonPathGeneric(path, numSteps, dt, mp, [&](size_t i) {
+        return std::pair{sign * normalPairs[2 * i], sign * normalPairs[2 * i + 1]};
+    });
 }
