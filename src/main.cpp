@@ -2,7 +2,10 @@
 //
 // Zero external dependencies: C++17 standard library only (<random>,
 // <thread>, <chrono>). Builds directly with cl.exe (see build.ps1).
+#include <chrono>
 #include <cstring>
+#include <ctime>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -23,6 +26,7 @@ struct CliOptions {
     bool benchmarkScaling = false;
     bool benchmarkPaths = false;
     bool showHelp = false;
+    std::string outputCsv;
 };
 
 void printHelp(const char* exe) {
@@ -55,6 +59,8 @@ void printHelp(const char* exe) {
         "  --self-test           validate engine vs. closed form / parity\n"
         "  --benchmark-scaling   also run single-threaded, report measured speedup\n"
         "  --benchmark-paths     report elapsed ms across a path-count sweep\n"
+        "  --output-csv FILE     append the pricing result as a CSV row to FILE\n"
+        "                        (writes a header line if FILE doesn't exist yet)\n"
         "  --help                show this message\n";
 }
 
@@ -105,6 +111,7 @@ bool parseArgs(int argc, char** argv, CliOptions& opt) {
         else if (a == "--self-test") opt.selfTest = true;
         else if (a == "--benchmark-scaling") opt.benchmarkScaling = true;
         else if (a == "--benchmark-paths") opt.benchmarkPaths = true;
+        else if (a == "--output-csv") opt.outputCsv = argv[++i];
         else if (a == "--help" || a == "-h") { opt.showHelp = true; return true; }
         else {
             std::cerr << "Unknown option: " << a << "\n";
@@ -259,6 +266,52 @@ void runPathBenchmark(const MarketParams& mp, const AsianOptionSpec& spec, uint6
     std::cout.precision(savedPrecision);
 }
 
+// Appends one pricing run to a CSV file, writing a header row first if the
+// file doesn't already exist (or is empty). Kept append-only and dependency
+// free (no CSV library) so repeated runs build up a simple local results
+// log a desk could load into a spreadsheet or pandas for scenario tracking.
+void appendResultCsv(const std::string& path, const CliOptions& opt, const SimulationResult& r) {
+    const bool needsHeader = [&] {
+        std::ifstream existing(path, std::ios::ate);
+        return !existing.good() || existing.tellg() == std::streampos(0);
+    }();
+
+    std::ofstream out(path, std::ios::app);
+    if (!out) {
+        std::cerr << "Warning: could not open --output-csv file '" << path << "' for writing\n";
+        return;
+    }
+
+    if (needsHeader) {
+        out << "timestamp_utc,model,type,spot,strike,maturity,vol,rate,averaging_points,"
+               "paths,threads,seed,antithetic,control_variate,price,std_error,ci95_lo,ci95_hi,"
+               "elapsed_seconds,paths_per_second\n";
+    }
+
+    const std::time_t now = std::time(nullptr);
+    std::tm utcTm{};
+#if defined(_WIN32)
+    gmtime_s(&utcTm, &now);
+#else
+    gmtime_r(&now, &utcTm);
+#endif
+    char timestamp[32];
+    std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utcTm);
+
+    const bool cvActuallyUsed = opt.cfg.controlVariate && opt.mp.model != ModelType::Heston;
+
+    out << timestamp << ',' << modelName(opt.mp.model) << ','
+        << (opt.spec.type == OptionType::Call ? "call" : "put") << ',' << std::setprecision(10)
+        << opt.mp.S0 << ',' << opt.spec.strike << ',' << opt.spec.maturity << ',' << opt.mp.sigma
+        << ',' << opt.mp.r << ',' << opt.spec.numAveragingPoints << ',' << r.numPaths << ','
+        << r.numThreads << ',' << opt.cfg.seed << ',' << (opt.cfg.antithetic ? "1" : "0") << ','
+        << (cvActuallyUsed ? "1" : "0") << ',' << r.price << ',' << r.stdError << ','
+        << (r.price - r.confInterval95) << ',' << (r.price + r.confInterval95) << ','
+        << r.elapsedSeconds << ',' << r.pathsPerSecond << '\n';
+
+    std::cout << "Result appended to " << path << "\n";
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -307,6 +360,10 @@ int main(int argc, char** argv) {
 
     const SimulationResult full = MonteCarloEngine::price(opt.mp, opt.spec, opt.cfg);
     printResult("Asian option", full);
+
+    if (!opt.outputCsv.empty()) {
+        appendResultCsv(opt.outputCsv, opt, full);
+    }
 
     if (opt.benchmarkScaling) {
         std::cout << "\n=== Thread scaling benchmark ===\n";

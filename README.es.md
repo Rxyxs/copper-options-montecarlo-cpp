@@ -156,11 +156,20 @@ con `/O2 /std:c++20 /EHsc /W4`, generando `bin\copper_mc.exe`.
 .\bin\copper_mc.exe --self-test --benchmark-scaling
 .\bin\copper_mc.exe --model heston --spot 4.5 --strike 4.6 --maturity 0.5 --type put
 .\bin\copper_mc.exe --benchmark-paths
+.\bin\copper_mc.exe --paths 1000000 --model heston --output-csv results.csv
 .\bin\copper_mc.exe --help
 ```
 
 Todos los parámetros de mercado/opción son valores de ejemplo ilustrativos
 (documentados en `--help`), no un feed de cotizaciones en vivo.
+
+`--output-csv FILE` agrega los parámetros y el resultado de la corrida
+(precio, error estándar, IC 95%, throughput, timestamp) como una fila CSV,
+escribiendo una línea de encabezado la primera vez que `FILE` no existe --
+una forma sin dependencias de construir un registro local de escenarios a
+través de corridas repetidas (p. ej. un barrido de spot/vol) sin recurrir a
+una base de datos. `results.csv` está en `.gitignore` por ser salida local
+de cada corrida, no parte del proyecto publicado.
 
 ## Resultados (medidos, no estimados)
 

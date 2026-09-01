@@ -29,4 +29,8 @@ CTestTestfile.cmake
 Thumbs.db
 .DS_Store
 
+# Local results log (--output-csv), user-generated, not part of the repo
+results.csv
+*.results.csv
+
 # Internal tooling config (not part of the published project)

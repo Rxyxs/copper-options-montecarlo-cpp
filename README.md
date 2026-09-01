@@ -145,11 +145,19 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 .\bin\copper_mc.exe --self-test --benchmark-scaling
 .\bin\copper_mc.exe --model heston --spot 4.5 --strike 4.6 --maturity 0.5 --type put
 .\bin\copper_mc.exe --benchmark-paths
+.\bin\copper_mc.exe --paths 1000000 --model heston --output-csv results.csv
 .\bin\copper_mc.exe --help
 ```
 
 All market/option parameters are illustrative example values (documented in
 `--help`), not a live quote feed.
+
+`--output-csv FILE` appends the run's parameters and result (price, std.
+error, 95% CI, throughput, timestamp) as one CSV row, writing a header line
+the first time `FILE` doesn't exist — a zero-dependency way to build up a
+local scenario log across repeated runs (e.g. a spot/vol sweep) without
+reaching for a database. `results.csv` is gitignored since it's run-local
+output, not part of the published project.
 
 ## Results (measured, not estimated)
 
