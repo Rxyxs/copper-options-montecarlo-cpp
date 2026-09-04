@@ -21,6 +21,9 @@ New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 
 $config = if ($args -contains "-Debug") { "Debug" } else { "Release" }
 $optFlags = if ($config -eq "Debug") { "/Od /Zi /MDd" } else { "/O2 /DNDEBUG /MD" }
+# -Tests also builds and runs the two test suites in tests/, so the no-CMake
+# path can verify the engine too instead of only producing the pricer binary.
+$withTests = $args -contains "-Tests"
 
 Write-Host "Building copper_mc.exe ($config)..."
 
@@ -36,3 +39,24 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Build succeeded: $binDir\copper_mc.exe"
+
+if ($withTests) {
+    foreach ($suite in @("test_pricing_math", "test_engine_properties")) {
+        Write-Host "Building $suite..."
+        $testCmd = "call `"$vcvars`" >nul && cl.exe /std:c++20 /EHsc /W4 /nologo $optFlags " +
+                   "/I `"$root\include`" /I `"$root\tests`" `"$root\tests\$suite.cpp`" " +
+                   "/Fe:`"$binDir\$suite.exe`" /Fo:`"$binDir\${suite}_`""
+        cmd.exe /c $testCmd
+        if ($LASTEXITCODE -ne 0) { throw "Build failed for $suite (exit code $LASTEXITCODE)" }
+    }
+
+    $failed = 0
+    foreach ($suite in @("test_pricing_math", "test_engine_properties")) {
+        Write-Host ""
+        & "$binDir\$suite.exe"
+        if ($LASTEXITCODE -ne 0) { $failed = 1 }
+    }
+    if ($failed -ne 0) { throw "Test suite failed" }
+    Write-Host ""
+    Write-Host "All test suites passed."
+}

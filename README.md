@@ -1,5 +1,6 @@
 # Copper Options Monte Carlo
 
+[![tests](https://github.com/Rxyxs/copper-options-montecarlo-cpp/actions/workflows/tests.yml/badge.svg)](https://github.com/Rxyxs/copper-options-montecarlo-cpp/actions/workflows/tests.yml)
 [![C++](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 [![Build](https://img.shields.io/badge/build-CMake%20%7C%20MSVC%20cl.exe-informational.svg)](CMakeLists.txt)
 [![Concurrency](https://img.shields.io/badge/concurrency-std%3A%3Aexecution%3A%3Apar__unseq-orange.svg)](include/MonteCarloEngine.h)
@@ -47,7 +48,7 @@ Two design goals follow directly from that use case:
 | Metric | Result | What it means |
 |---|---|---|
 | Parallel speedup, 16 threads vs. sequential | **9.64x** (853,558 vs. 88,559 paths/sec) | A multi-second single-core price turns sub-second, honestly reported as sub-linear (hyperthreading/memory bandwidth), not asserted as 16x |
-| Variance reduction (control variate) | stderr 0.000007 vs. 0.000325 raw | ~46x tighter confidence interval at the same path count, at effectively zero extra cost |
+| Variance reduction, both techniques on vs. off | **19.7x** tighter (stderr 0.0000256 vs. 0.000504) | Measured as a controlled A/B — same model, same option, same 1M paths, same seed, only the flags change ([breakdown](#variance-reduction-measured-as-a-controlled-ab)) |
 | Self-test vs. closed-form price (GBM) | diff 0.000712, within 4×stderr tolerance | Pass/fail correctness gate on every run, not a one-time manual check |
 | Heston put-call parity self-test | diff 0.000140, within 4×stderr tolerance | Validates the stochastic-vol model even though it has no closed-form Asian price |
 | Sustained throughput | ~1.2-1.4M paths/sec | Flat across path counts — the expected signature of a genuinely embarrassingly-parallel workload |
@@ -96,8 +97,8 @@ changed which paths landed on which thread).
 - **Variance reduction**: antithetic variates (free — the negated path
   reuses the same random draws, no extra RNG cost) plus, for GBM/Schwartz,
   a geometric-average control variate anchored to the closed-form
-  Kemna-Vorst price (reduces standard error by roughly two orders of
-  magnitude — see measured numbers below). Heston has no closed-form
+  Kemna-Vorst price (measured at **16.4x** tighter on its own, 19.7x combined
+  with antithetic — see the controlled A/B below). Heston has no closed-form
   geometric-Asian anchor, so it falls back to antithetic-only — documented,
   not silently applied where it wouldn't be valid.
 - **RNG**: `std::mt19937_64` feeding a hand-rolled Marsaglia-polar normal
@@ -127,13 +128,14 @@ GCC/Clang, `std::execution::par_unseq` needs TBB — see `CMakeLists.txt`):
 ```powershell
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
-ctest --test-dir build -C Release        # runs --self-test as a CMake test
+ctest --test-dir build -C Release        # --self-test + both test suites (see Tests)
 ```
 
 **Or MSVC directly**, no CMake:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -Tests   # also builds + runs the test suites
 ```
 
 `build.ps1` locates `vcvars64.bat` automatically and compiles
@@ -171,7 +173,7 @@ average, 2,000,000 paths):
 |---|---|
 | Closed form | 0.291034 |
 | Monte Carlo | 0.291746 |
-| \|difference\| | 0.000712 (tolerance: 4 × stderr = 0.001299) |
+| \|difference\| | 0.000712 (tolerance: 4 × stderr = 0.001004) |
 | **Result** | **PASS** |
 
 **Self-test — Heston put-call parity** (arithmetic average, model-independent
@@ -182,8 +184,64 @@ for why this check is valid despite Heston having no closed-form Asian price):
 |---|---|
 | MC Call − Put | 0.054301 |
 | Parity Call − Put (model-independent) | 0.054442 |
-| \|difference\| | 0.000140 (tolerance: 4 × combined stderr = 0.001622) |
+| \|difference\| | 0.000140 (tolerance: 4 × combined stderr = 0.001186) |
 | **Result** | **PASS** |
+
+### Variance reduction, measured as a controlled A/B
+
+An earlier version of this table claimed "~46x tighter confidence interval at
+the same path count". That number did not survive being checked: it compared
+the stderr of the Schwartz arithmetic call at 4,000,000 paths (0.000007)
+against the stderr of the *GBM geometric* self-test at 2,000,000 paths
+(0.000325) — a different model, a different option, and a different path
+count, so not a like-for-like comparison at all, let alone "at the same path
+count". Replaced with an actual A/B: identical model, option, path count and
+seed, changing only the two flags.
+
+GBM, arithmetic-average call, spot = strike = 4.50, 1-year, 252 fixings,
+1,000,000 paths, seed fixed:
+
+| Configuration | Price (USD) | Std. error | Error reduction vs. plain MC |
+|---|---|---|---|
+| Plain Monte Carlo | 0.334960 | 0.00050428 | 1.00x |
+| Antithetic only | 0.333914 | 0.00037618 | **1.34x** |
+| Control variate only | 0.332934 | 0.00003081 | **16.37x** |
+| Both (shipped default) | 0.332874 | 0.00002555 | **19.74x** |
+
+All four prices agree inside their own error bars, which is the property a
+variance-reduction technique must have: it may shrink the interval, never
+move the estimate. The control variate does nearly all the work; antithetic
+sampling adds a further ~1.2x on top of it.
+
+### A standard-error bug this measurement exposed
+
+Running that A/B is what surfaced a real defect: antithetic sampling was
+reducing the true error but the engine's reported standard error did not move
+at all (ratio 1.000 between on and off). The cause was in `simulatePair` —
+the two halves of an antithetic pair were accumulated as *two independent
+samples*, when they are negatively correlated by construction. That made the
+variance formula measure the marginal variance of a single path, which
+antithetic sampling doesn't change, instead of the variance of the pair
+average, which is what actually shrinks.
+
+Quantified before fixing, by pricing the same option under 60 seeds and
+comparing the true spread of prices against what the engine reported:
+
+| | True spread across seeds | Reported stderr | Reported / true |
+|---|---|---|---|
+| Antithetic on (before fix) | 0.00165 | 0.00205 | **1.247** |
+| Antithetic on (after fix) | 0.00165 | 0.00154 | 0.933 |
+| Antithetic off (unchanged) | 0.00215 | 0.00205 | 0.954 |
+
+So the engine was overstating its own error by ~25% whenever antithetic
+sampling was on (implied pairwise correlation ρ ≈ −0.36) — a conservative
+error, but a wrong one, and it hid the technique's benefit entirely. The fix
+averages each pair into a single sample. **Prices are unchanged** (every
+figure in this README that predates the fix still holds); only the standard
+errors and confidence intervals tightened, which is why the self-test
+tolerances above are smaller than they used to be. `tests/test_engine_properties.cpp`
+now pins both halves of this down, and both of its antithetic tests fail
+against the pre-fix engine.
 
 **Copper Asian call** — Schwartz mean-reverting model, spot = strike = 4.50
 USD/lb, 1-year maturity, 252 daily fixings, σ = 0.28, r = 0.045,
@@ -192,10 +250,10 @@ USD/lb, 1-year maturity, 252 daily fixings, σ = 0.28, r = 0.045,
 | Metric | Value |
 |---|---|
 | Price | 0.299707 USD |
-| Std. error | 0.000007 |
-| 95% CI | [0.299693, 0.299721] |
-| Throughput | 1,306,658 paths/sec |
-| Elapsed | 3.06 s |
+| Std. error | 0.000005 |
+| 95% CI | [0.299696, 0.299718] |
+| Throughput | 1,319,709 paths/sec |
+| Elapsed | 3.03 s |
 
 **Thread scaling** (same option, 4,000,000 paths, `--benchmark-scaling`):
 
@@ -241,11 +299,48 @@ copper-options-montecarlo-cpp/
 │   └── Timer.h
 ├── src/
 │   └── main.cpp            # CLI, self-tests, benchmarks
+├── tests/
+│   ├── test_framework.h            # ~90-line assertion harness, no dependencies
+│   ├── test_pricing_math.cpp       # 12 cases: averaging, payoffs, closed form
+│   └── test_engine_properties.cpp  # 10 cases: reproducibility, variance reduction, convergence
 ├── CMakeLists.txt
 ├── build.ps1
 ├── LICENSE
 └── README.md / README.es.md
 ```
+
+## Tests
+
+22 cases across two suites, plus the two end-to-end `--self-test` checks, all
+wired into CTest and run in CI on every push:
+
+```powershell
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -Tests   # or, without CMake
+```
+
+`tests/test_pricing_math.cpp` (12 cases) covers the deterministic math with
+exact expected values — that `path[0]` is the spot and never enters the
+average, AM-GM between the two averaging modes, payoff clamping on both sides,
+`normalCDF` against known quantiles, and the closed form's put-call parity,
+strike monotonicity, vega sign, and deep-ITM limit.
+
+`tests/test_engine_properties.cpp` (10 cases) tests the claims this README
+makes about the engine rather than re-checking the price:
+
+| Property tested | Why it can fail silently otherwise |
+|---|---|
+| Sequential and parallel agree to ~1e-15 relative | The per-work-item `splitmix64` seeding is what makes results thread-count-independent; a regression here is invisible in any single run |
+| Same seed reproduces the same run | Asserted to rounding, not bitwise — parallel reduction order varies between runs and float addition isn't associative |
+| Antithetic sampling lowers the reported stderr | Fails against the pre-fix engine (ratio was exactly 1.000) |
+| Reported stderr is calibrated against the true spread over 40 seeds | Catches an estimator that reports a number unrelated to its actual error; the pre-fix engine scores 1.29 here vs. a 0.85–1.18 band |
+| Std. error decays as 1/√N | The defining property of Monte Carlo; nothing else in the repo checked it |
+| Control variate cuts variance *without* moving the price | A "variance reduction" that shifts the estimate is a bug with a smaller error bar |
+| MC geometric price matches Kemna-Vorst at low path count | Localizes a simulator break faster than the 2M-path self-test |
+| Oversized `numAveragingPoints` throws | The path buffer is a fixed-size stack array; silently overflowing it would be memory corruption, not a wrong price |
 
 ## License
 

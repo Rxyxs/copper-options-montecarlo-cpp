@@ -36,4 +36,23 @@ else()
 endif()
 
 enable_testing()
+
+# --self-test prices against the Kemna-Vorst closed form and checks Heston
+# put-call parity end to end; the two suites below cover the pieces underneath
+# it (exact averaging/payoff/closed-form arithmetic) and the engine's
+# statistical properties (reproducibility, variance reduction, 1/sqrt(N) decay).
 add_test(NAME self_test COMMAND copper_mc --self-test)
+
+foreach(test_name test_pricing_math test_engine_properties)
+    add_executable(${test_name} tests/${test_name}.cpp)
+    target_include_directories(${test_name} PRIVATE include tests)
+    if(MSVC)
+        target_compile_options(${test_name} PRIVATE /W4 /EHsc /O2)
+    else()
+        target_compile_options(${test_name} PRIVATE -Wall -Wextra -O3)
+        if(TBB_FOUND)
+            target_link_libraries(${test_name} PRIVATE TBB::tbb)
+        endif()
+    endif()
+    add_test(NAME ${test_name} COMMAND ${test_name})
+endforeach()

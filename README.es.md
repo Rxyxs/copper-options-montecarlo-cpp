@@ -1,5 +1,6 @@
 # Copper Options Monte Carlo
 
+[![tests](https://github.com/Rxyxs/copper-options-montecarlo-cpp/actions/workflows/tests.yml/badge.svg)](https://github.com/Rxyxs/copper-options-montecarlo-cpp/actions/workflows/tests.yml)
 [![C++](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 [![Build](https://img.shields.io/badge/build-CMake%20%7C%20MSVC%20cl.exe-informational.svg)](CMakeLists.txt)
 [![Concurrencia](https://img.shields.io/badge/concurrencia-std%3A%3Aexecution%3A%3Apar__unseq-orange.svg)](include/MonteCarloEngine.h)
@@ -51,7 +52,7 @@ De ese caso de uso se derivan directamente dos objetivos de diseño:
 | Métrica | Resultado | Qué significa |
 |---|---|---|
 | Speedup paralelo, 16 hilos vs. secuencial | **9,64x** (853.558 vs. 88.559 paths/seg) | Un precio de varios segundos en un núcleo pasa a menos de un segundo, reportado honestamente como sub-lineal (hyperthreading/ancho de banda de memoria), no como 16x |
-| Reducción de varianza (variable de control) | error estándar 0,000007 vs. 0,000325 crudo | Intervalo de confianza ~46x más estrecho al mismo número de trayectorias, a costo extra casi nulo |
+| Reducción de varianza, ambas técnicas on vs. off | **19,7x** más estrecho (error estándar 0,0000256 vs. 0,000504) | Medido como un A/B controlado: mismo modelo, misma opción, mismas 1M trayectorias, misma semilla — solo cambian los flags ([desglose abajo](#reducción-de-varianza-medida-como-un-ab-controlado)) |
 | Self-test vs. precio de forma cerrada (GBM) | diferencia 0,000712, dentro de tolerancia 4×error estándar | Verificación pass/fail de correctitud en cada ejecución, no un chequeo manual único |
 | Self-test de paridad put-call de Heston | diferencia 0,000140, dentro de tolerancia 4×error estándar | Valida el modelo de volatilidad estocástica aunque no tenga precio asiático de forma cerrada |
 | Throughput sostenido | ~1,2-1,4M paths/seg | Plano a través de distintos números de trayectorias -- la firma esperada de una carga genuinamente paralela sin dependencias |
@@ -102,9 +103,9 @@ trayectorias caían en qué hilo).
 - **Reducción de varianza**: variables antitéticas (gratis — la trayectoria
   negada reutiliza los mismos sorteos aleatorios, sin costo adicional de
   RNG) más, para GBM/Schwartz, una variable de control de promedio
-  geométrico anclada al precio cerrado de Kemna-Vorst (reduce el error
-  estándar en aproximadamente dos órdenes de magnitud — ver números medidos
-  abajo). Heston no tiene un ancla geométrico-asiática cerrada, así que cae
+  geométrico anclada al precio cerrado de Kemna-Vorst (medido en **16,4x**
+  más estrecho por sí sola, 19,7x combinada con antitéticas — ver el A/B
+  controlado abajo). Heston no tiene un ancla geométrico-asiática cerrada, así que cae
   a solo-antitéticas — documentado, no aplicado en silencio donde no sería
   válido.
 - **RNG**: `std::mt19937_64` alimentando un generador normal Marsaglia-polar
@@ -138,13 +139,14 @@ C++20; en GCC/Clang, `std::execution::par_unseq` necesita TBB — ver
 ```powershell
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
-ctest --test-dir build -C Release        # corre --self-test como test de CMake
+ctest --test-dir build -C Release        # --self-test + ambas suites (ver Tests)
 ```
 
 **O directo con MSVC**, sin CMake:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -Tests   # además compila y corre las suites
 ```
 
 `build.ps1` ubica `vcvars64.bat` automáticamente y compila `src/main.cpp`
@@ -183,7 +185,7 @@ promedio geométrico, 2.000.000 trayectorias):
 |---|---|
 | Fórmula cerrada | 0.291034 |
 | Monte Carlo | 0.291746 |
-| \|diferencia\| | 0.000712 (tolerancia: 4 × error estándar = 0.001299) |
+| \|diferencia\| | 0.000712 (tolerancia: 4 × error estándar = 0.001004) |
 | **Resultado** | **PASS** |
 
 **Self-test — paridad put-call de Heston** (promedio aritmético, identidad
@@ -195,8 +197,65 @@ aunque Heston no tenga fórmula cerrada para la opción asiática):
 |---|---|
 | MC Call − Put | 0.054301 |
 | Paridad Call − Put (independiente del modelo) | 0.054442 |
-| \|diferencia\| | 0.000140 (tolerancia: 4 × error estándar combinado = 0.001622) |
+| \|diferencia\| | 0.000140 (tolerancia: 4 × error estándar combinado = 0.001186) |
 | **Resultado** | **PASS** |
+
+### Reducción de varianza, medida como un A/B controlado
+
+Una versión anterior de esta tabla afirmaba "intervalo de confianza ~46x más
+estrecho al mismo número de trayectorias". Ese número no sobrevivió a ser
+verificado: comparaba el error estándar del call aritmético bajo Schwartz con
+4.000.000 de trayectorias (0,000007) contra el del self-test *geométrico bajo
+GBM* con 2.000.000 (0,000325) — modelo distinto, opción distinta y número de
+trayectorias distinto, así que no era una comparación equivalente, y mucho
+menos "al mismo número de trayectorias". Reemplazado por un A/B real: mismo
+modelo, misma opción, mismas trayectorias y misma semilla; solo cambian los
+dos flags.
+
+GBM, call de promedio aritmético, spot = strike = 4,50, 1 año, 252 fixings,
+1.000.000 de trayectorias, semilla fija:
+
+| Configuración | Precio (USD) | Error estándar | Reducción vs. MC simple |
+|---|---|---|---|
+| Monte Carlo simple | 0.334960 | 0.00050428 | 1,00x |
+| Solo antitéticas | 0.333914 | 0.00037618 | **1,34x** |
+| Solo variable de control | 0.332934 | 0.00003081 | **16,37x** |
+| Ambas (default del repo) | 0.332874 | 0.00002555 | **19,74x** |
+
+Los cuatro precios coinciden dentro de sus propias barras de error, que es la
+propiedad que una técnica de reducción de varianza debe cumplir: puede
+estrechar el intervalo, nunca mover la estimación. La variable de control hace
+casi todo el trabajo; las antitéticas suman ~1,2x adicional por encima.
+
+### Un bug en el error estándar que esta medición dejó al descubierto
+
+Correr ese A/B fue lo que expuso un defecto real: las antitéticas *sí* estaban
+reduciendo el error verdadero, pero el error estándar reportado por el motor no
+se movía en absoluto (ratio 1,000 entre on y off). La causa estaba en
+`simulatePair` — las dos mitades de un par antitético se acumulaban como *dos
+muestras independientes*, cuando por construcción están correlacionadas
+negativamente. Eso hacía que la fórmula de varianza midiera la varianza
+marginal de una trayectoria individual, que las antitéticas no cambian, en vez
+de la varianza del promedio del par, que es lo que efectivamente se reduce.
+
+Cuantificado antes de corregirlo, valorizando la misma opción con 60 semillas y
+comparando la dispersión real de precios contra lo que el motor reportaba:
+
+| | Dispersión real entre semillas | Error estándar reportado | Reportado / real |
+|---|---|---|---|
+| Antitéticas on (antes del fix) | 0.00165 | 0.00205 | **1,247** |
+| Antitéticas on (después del fix) | 0.00165 | 0.00154 | 0,933 |
+| Antitéticas off (sin cambios) | 0.00215 | 0.00205 | 0,954 |
+
+O sea, el motor sobrestimaba su propio error en ~25% cada vez que las
+antitéticas estaban activadas (correlación implícita entre pares ρ ≈ −0,36) —
+un error conservador, pero incorrecto, y que además escondía por completo el
+beneficio de la técnica. El fix promedia cada par en una sola muestra. **Los
+precios no cambian** (toda cifra de este README anterior al fix sigue siendo
+válida); solo se estrecharon los errores estándar e intervalos de confianza,
+que es por qué las tolerancias de los self-tests de arriba son menores que
+antes. `tests/test_engine_properties.cpp` ahora fija ambas mitades de esto, y
+sus dos tests de antitéticas fallan contra el motor previo al fix.
 
 **Call asiático sobre cobre** — modelo Schwartz de reversión a la media,
 spot = strike = 4.50 USD/lb, madurez de 1 año, 252 fixings diarios, σ =
@@ -206,10 +265,10 @@ control activadas:
 | Métrica | Valor |
 |---|---|
 | Precio | 0.299707 USD |
-| Error estándar | 0.000007 |
-| IC 95% | [0.299693, 0.299721] |
-| Throughput | 1.306.658 trayectorias/seg |
-| Tiempo transcurrido | 3.06 s |
+| Error estándar | 0.000005 |
+| IC 95% | [0.299696, 0.299718] |
+| Throughput | 1.319.709 trayectorias/seg |
+| Tiempo transcurrido | 3.03 s |
 
 **Escalamiento por hilos** (misma opción, 4.000.000 trayectorias,
 `--benchmark-scaling`):
@@ -258,11 +317,48 @@ copper-options-montecarlo-cpp/
 │   └── Timer.h
 ├── src/
 │   └── main.cpp            # CLI, self-tests, benchmarks
+├── tests/
+│   ├── test_framework.h            # harness de aserciones (~90 lineas, sin dependencias)
+│   ├── test_pricing_math.cpp       # 12 casos: promedios, payoffs, formula cerrada
+│   └── test_engine_properties.cpp  # 10 casos: reproducibilidad, reduccion de varianza, convergencia
 ├── CMakeLists.txt
 ├── build.ps1
 ├── LICENSE
 └── README.md / README.es.md
 ```
+
+## Tests
+
+22 casos en dos suites, más los dos chequeos end-to-end de `--self-test`, todos
+conectados a CTest y ejecutados en CI en cada push:
+
+```powershell
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -Tests   # o, sin CMake
+```
+
+`tests/test_pricing_math.cpp` (12 casos) cubre la matemática determinística con
+valores esperados exactos — que `path[0]` es el spot y nunca entra al promedio,
+la desigualdad AM-GM entre los dos modos de promediado, el clamp del payoff por
+ambos lados, `normalCDF` contra cuantiles conocidos, y de la fórmula cerrada:
+paridad put-call, monotonía en el strike, signo del vega y el límite deep-ITM.
+
+`tests/test_engine_properties.cpp` (10 casos) testea las afirmaciones que este
+README hace sobre el motor, en vez de volver a chequear el precio:
+
+| Propiedad testeada | Por qué si no puede fallar en silencio |
+|---|---|
+| Secuencial y paralelo coinciden a ~1e-15 relativo | El sembrado `splitmix64` por item de trabajo es lo que hace el resultado independiente del número de hilos; una regresión acá es invisible en cualquier corrida individual |
+| La misma semilla reproduce la misma corrida | Verificado a nivel de redondeo, no bit a bit — el orden de la reducción paralela varía entre corridas y la suma flotante no es asociativa |
+| Las antitéticas bajan el error estándar reportado | Falla contra el motor previo al fix (el ratio era exactamente 1,000) |
+| El error estándar reportado está calibrado contra la dispersión real en 40 semillas | Detecta un estimador que reporta un número sin relación con su error real; el motor previo al fix marca 1,29 acá contra una banda de 0,85-1,18 |
+| El error estándar decae como 1/√N | La propiedad que define a Monte Carlo; nada más en el repo la verificaba |
+| La variable de control reduce varianza *sin* mover el precio | Una "reducción de varianza" que desplaza la estimación es un bug con una barra de error más chica |
+| El precio MC geométrico coincide con Kemna-Vorst a bajo número de trayectorias | Localiza una falla del simulador más rápido que el self-test de 2M |
+| `numAveragingPoints` excesivo lanza excepción | El buffer de trayectoria es un arreglo de tamaño fijo en el stack; desbordarlo en silencio sería corrupción de memoria, no un precio equivocado |
 
 ## Licencia
 
