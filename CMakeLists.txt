@@ -56,3 +56,12 @@ foreach(test_name test_pricing_math test_engine_properties)
     endif()
     add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()
+
+# Every test here is Monte Carlo: it either converges in seconds or something
+# is wrong (a deadlock in the parallel reduction, a path loop that never
+# terminates). Without a timeout, CTest waits indefinitely and a hung test
+# burns the CI job's whole time budget instead of failing. These bounds are
+# ~20x the measured runtimes, so they only trip on a genuine hang.
+set_tests_properties(self_test PROPERTIES TIMEOUT 600)
+set_tests_properties(test_pricing_math PROPERTIES TIMEOUT 60)
+set_tests_properties(test_engine_properties PROPERTIES TIMEOUT 600)
