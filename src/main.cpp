@@ -298,7 +298,8 @@ void appendResultCsv(const std::string& path, const CliOptions& opt, const Simul
     char timestamp[32];
     std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &utcTm);
 
-    const bool cvActuallyUsed = opt.cfg.controlVariate && opt.mp.model != ModelType::Heston;
+    // Lo que el motor efectivamente aplico, no lo que se pidio por bandera.
+    const bool cvActuallyUsed = r.controlVariateApplied;
 
     out << timestamp << ',' << modelName(opt.mp.model) << ','
         << (opt.spec.type == OptionType::Call ? "call" : "put") << ',' << std::setprecision(10)
@@ -351,10 +352,13 @@ int main(int argc, char** argv) {
     std::cout << "Volatility / Rate   : " << opt.mp.sigma << " / " << opt.mp.r << "\n";
     std::cout << "Type                : " << (opt.spec.type == OptionType::Call ? "Call" : "Put")
               << " (arithmetic average)\n";
-    const bool cvActuallyUsed = opt.cfg.controlVariate && opt.mp.model != ModelType::Heston;
-    std::cout << "Antithetic / CV     : " << (opt.cfg.antithetic ? "on" : "off") << " / "
-              << (cvActuallyUsed ? "on" : (opt.mp.model == ModelType::Heston ? "off (n/a for Heston)"
-                                                                              : "off"))
+    const bool cvActuallyUsed = MonteCarloEngine::controlVariateApplies(opt.mp, opt.spec, opt.cfg);
+    const char* cvLabel =
+        cvActuallyUsed                                          ? "on"
+        : opt.mp.model == ModelType::GeometricBrownianMotion    ? "off"
+                                                                : "off (no valid analytic anchor "
+                                                                  "for this model -- see README)";
+    std::cout << "Antithetic / CV     : " << (opt.cfg.antithetic ? "on" : "off") << " / " << cvLabel
               << "\n";
     std::cout << "Hardware threads    : " << std::thread::hardware_concurrency() << "\n\n";
 

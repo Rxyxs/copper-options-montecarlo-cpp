@@ -48,7 +48,8 @@ Two design goals follow directly from that use case:
 | Metric | Result | What it means |
 |---|---|---|
 | Parallel speedup, 16 threads vs. sequential | **9.64x** (853,558 vs. 88,559 paths/sec) | A multi-second single-core price turns sub-second, honestly reported as sub-linear (hyperthreading/memory bandwidth), not asserted as 16x |
-| Variance reduction, both techniques on vs. off | **19.7x** tighter (stderr 0.0000256 vs. 0.000504) | Measured as a controlled A/B — same model, same option, same 1M paths, same seed, only the flags change ([breakdown](#variance-reduction-measured-as-a-controlled-ab)) |
+| Variance reduction under GBM, both techniques on vs. off | **19.7x** tighter (stderr 0.0000256 vs. 0.000504) | Measured as a controlled A/B — same model, same option, same 1M paths, same seed, only the flags change ([breakdown](#variance-reduction-measured-as-a-controlled-ab)) |
+| Control-variate bias found and fixed | Schwartz price corrected 0.2997 → **0.1663** | The GBM-derived anchor was being applied to a mean-reverting model, flattening its response to the equilibrium level from 0.312 to 0.013 ([write-up](#the-control-variate-was-biasing-every-schwartz-price)) |
 | Self-test vs. closed-form price (GBM) | diff 0.000712, within 4×stderr tolerance | Pass/fail correctness gate on every run, not a one-time manual check |
 | Heston put-call parity self-test | diff 0.000140, within 4×stderr tolerance | Validates the stochastic-vol model even though it has no closed-form Asian price |
 | Sustained throughput | ~1.2-1.4M paths/sec | Flat across path counts — the expected signature of a genuinely embarrassingly-parallel workload |
@@ -95,12 +96,15 @@ changed which paths landed on which thread).
   documented as a real discretization tradeoff in `MarketModel.h`, not
   glossed over.
 - **Variance reduction**: antithetic variates (free — the negated path
-  reuses the same random draws, no extra RNG cost) plus, for GBM/Schwartz,
+  reuses the same random draws, no extra RNG cost) plus, **for GBM only**,
   a geometric-average control variate anchored to the closed-form
   Kemna-Vorst price (measured at **16.4x** tighter on its own, 19.7x combined
-  with antithetic — see the controlled A/B below). Heston has no closed-form
-  geometric-Asian anchor, so it falls back to antithetic-only — documented,
-  not silently applied where it wouldn't be valid.
+  with antithetic — see the controlled A/B below). Neither Schwartz nor Heston
+  has a valid closed-form geometric-Asian anchor, so both fall back to
+  antithetic-only, which on the Schwartz default is worth 1.25x. Heston was
+  always excluded; Schwartz was not, and applying the GBM anchor to it was
+  biasing every price the default model produced — [the write-up is
+  here](#the-control-variate-was-biasing-every-schwartz-price).
 - **RNG**: `std::mt19937_64` feeding a hand-rolled Marsaglia-polar normal
   generator (no `sin`/`cos`, just `sqrt`/`log`, caches the spare deviate).
 
@@ -213,6 +217,73 @@ variance-reduction technique must have: it may shrink the interval, never
 move the estimate. The control variate does nearly all the work; antithetic
 sampling adds a further ~1.2x on top of it.
 
+**That A/B is run under GBM, and that detail turned out to matter a great
+deal.** It is the only model where this control variate is valid, which the
+table above establishes but the engine did not enforce.
+
+### The control variate was biasing every Schwartz price
+
+`ClosedFormAsian::geometricAsianPrice` is the Kemna-Vorst formula, derived
+for GBM: it takes the geometric average's mean as
+`ln S0 + (r - q - σ²/2)·T/2` and its variance as `σ²·T/3`. Heston was already
+excluded from using it as an anchor, correctly, because the formula assumes
+constant volatility. **Schwartz was not excluded, and should have been** —
+under mean reversion the log-price is an Ornstein-Uhlenbeck process, so
+neither of those two expressions holds.
+
+A control variate only works when the term it subtracts has mean zero. Anchor
+a Schwartz simulation to the GBM expectation and that term has a large
+non-zero mean instead, so the "correction" drags the estimate toward the GBM
+price. Measured at the shipped defaults, 1,000,000 paths:
+
+| Model | CV applied | Price | Std. error |
+|---|---|---|---|
+| GBM | yes | 0.307187 | 0.000024 |
+| GBM | no | 0.308175 | 0.000483 |
+| Schwartz | **yes (the bug)** | 0.299721 | 0.000011 |
+| Schwartz | no | **0.166335** | 0.000221 |
+
+Under GBM the two agree to 0.001 on a price of 0.307 — about 27 basis points,
+which is the known continuous-versus-discrete averaging gap the closed form's
+own header documents. Under Schwartz they differ by **0.133 on a price of
+0.166**, roughly 80%, which is not an approximation error.
+
+**What makes this worse than a wrong number is what it did to the model.**
+Schwartz exists in this project to price mean reversion — that is the whole
+reason to reach for it over GBM for a commodity. Sweeping the equilibrium
+level across a wide range, 500,000 paths each:
+
+| Equilibrium level θ | Price, CV on (buggy) | Price, CV off (correct) |
+|---|---|---|
+| 3.80 | 0.295897 | 0.080843 |
+| 4.30 (default) | 0.299723 | 0.166398 |
+| 4.50 | 0.301535 | 0.209711 |
+| 5.20 | 0.308950 | 0.392866 |
+
+Correctly, the call ranges over **0.312** as the equilibrium level moves —
+a copper price pulled toward 3.80 makes an at-the-money call nearly
+worthless, pulled toward 5.20 makes it valuable. With the control variate
+active the whole response collapsed to **0.013**, pinned near the GBM answer
+of ~0.307 no matter what θ was set to. The model's defining parameter had
+stopped reaching the result.
+
+**The fix** is one condition: the control variate now applies only to GBM,
+for the same reason Heston was already excluded. Schwartz and Heston fall
+back to plain Monte Carlo with antithetic variates, which costs a wider
+interval at the same path count — the default's standard error goes from a
+reported 0.000005 to an honest 0.000111 — and buys back a price that
+responds to the model.
+
+**Why the existing test suite missed it.** There was already a test named
+`control_variate_cuts_variance_without_biasing_the_price`, and it asserts
+exactly the right property. It only ever ran under GBM, the one model where
+the property held, while the CLI's default model is Schwartz. The property
+was right; its coverage was not. Two tests now guard this:
+`control_variate_does_not_bias_the_price_under_any_model` runs the same
+check across all three models, and `schwartz_price_responds_to_the_equilibrium_level`
+asserts the economic behaviour directly, failing if the price stops moving
+with θ.
+
 ### A standard-error bug this measurement exposed
 
 Running that A/B is what surfaced a real defect: antithetic sampling was
@@ -245,15 +316,19 @@ against the pre-fix engine.
 
 **Copper Asian call** — Schwartz mean-reverting model, spot = strike = 4.50
 USD/lb, 1-year maturity, 252 daily fixings, σ = 0.28, r = 0.045,
-4,000,000 paths, antithetic + control variate on:
+4,000,000 paths, antithetic on (the control variate does not apply to this
+model — see below):
 
 | Metric | Value |
 |---|---|
-| Price | 0.299707 USD |
-| Std. error | 0.000005 |
-| 95% CI | [0.299696, 0.299718] |
-| Throughput | 1,319,709 paths/sec |
-| Elapsed | 3.03 s |
+| Price | 0.166264 USD |
+| Std. error | 0.000111 |
+| 95% CI | [0.166047, 0.166481] |
+| Throughput | 1,387,622 paths/sec |
+| Elapsed | 2.88 s |
+
+This table used to read 0.299707 with a standard error of 0.000005. Both
+numbers were wrong, and the section below is the correction.
 
 **Thread scaling** (same option, 4,000,000 paths, `--benchmark-scaling`):
 

@@ -29,6 +29,17 @@ Write-Host "Building copper_mc.exe ($config)..."
 
 # Run cl.exe inside a cmd.exe that has sourced vcvars64.bat, since MSVC's
 # environment (INCLUDE/LIB/PATH) is only set for that process tree.
+#
+# $ErrorActionPreference is relaxed around the native calls below on purpose.
+# With it set to "Stop", *any* line a native command writes to stderr becomes a
+# terminating error, and vcvars64.bat is chatty on stderr on some installs --
+# a VS2019 Community box without the standalone VS Installer prints
+# "vswhere.exe is not recognized" and then initializes the environment
+# correctly anyway. That harmless line was enough to abort a build that
+# otherwise succeeds with exit code 0. Correctness here comes from checking
+# $LASTEXITCODE after each call, which the script already does, so the
+# preference was only ever adding false failures.
+$ErrorActionPreference = "Continue"
 $cmd = "call `"$vcvars`" >nul && cl.exe /std:c++20 /EHsc /W4 /nologo $optFlags " +
        "/I `"$root\include`" `"$root\src\main.cpp`" " +
        "/Fe:`"$binDir\copper_mc.exe`" /Fo:`"$binDir\\`""

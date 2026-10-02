@@ -197,6 +197,74 @@ TEST(control_variate_cuts_variance_without_biasing_the_price) {
               "control variate changed the price beyond sampling noise -- it is biasing the estimate");
 }
 
+// The test above asserts the right property but only ever ran it under GBM,
+// which is why a real bias under Schwartz went unnoticed for so long: the
+// geometric anchor is the Kemna-Vorst GBM formula, and Schwartz is the CLI's
+// *default* model. Running the same property across every model is what makes
+// the check meaningful rather than a check of the one case that happened to
+// hold.
+TEST(control_variate_does_not_bias_the_price_under_any_model) {
+    const struct { const char* name; ModelType model; } models[] = {
+        {"GBM", ModelType::GeometricBrownianMotion},
+        {"Schwartz", ModelType::SchwartzMeanReverting},
+        {"Heston", ModelType::Heston},
+    };
+
+    for (const auto& m : models) {
+        auto mp = gbmParams();
+        mp.model = m.model;
+        mp.theta = std::log(4.30);  // equilibrium level of ln(S), only read by Schwartz
+        const auto spec = arithmeticCall();
+
+        auto withCv = baseConfig(200'000, 11);
+        withCv.controlVariate = true;
+        auto withoutCv = baseConfig(200'000, 11);
+        withoutCv.controlVariate = false;
+
+        const auto cv = MonteCarloEngine::price(mp, spec, withCv);
+        const auto raw = MonteCarloEngine::price(mp, spec, withoutCv);
+
+        const double combined95 =
+            1.959964 * std::sqrt(cv.stdError * cv.stdError + raw.stdError * raw.stdError);
+        const double gap = std::abs(cv.price - raw.price);
+        std::printf("      %-9s cv=%.6f raw=%.6f gap=%.6f (95%% band %.6f)\n", m.name, cv.price,
+                    raw.price, gap, combined95);
+        CHECK_MSG(gap < combined95,
+                  "control variate shifted the price beyond sampling noise for this model");
+    }
+}
+
+// The economic property the bias destroyed. Schwartz prices mean reversion
+// toward an equilibrium level, so a call struck at spot has to be worth more as
+// that level rises -- that response *is* the reason to choose this model over
+// GBM. While the GBM-anchored control variate was active it pinned the price
+// near the GBM answer and flattened the whole response to 0.013 across the
+// range below, which is a model that no longer does the job it was picked for.
+TEST(schwartz_price_responds_to_the_equilibrium_level) {
+    const auto spec = arithmeticCall();
+    double previous = -1.0;
+    double lowest = 0.0, highest = 0.0;
+
+    for (double theta : {3.80, 4.30, 4.50, 5.20}) {
+        auto mp = gbmParams();
+        mp.model = ModelType::SchwartzMeanReverting;
+        mp.kappa = 1.2;
+        mp.theta = std::log(theta);  // mp.theta is the equilibrium level of ln(S)
+
+        const auto result = MonteCarloEngine::price(mp, spec, baseConfig(200'000, 13));
+        std::printf("      theta=%.2f -> price=%.6f\n", theta, result.price);
+        CHECK_MSG(result.price > previous,
+                  "the call must be worth more as the equilibrium level rises");
+        if (previous < 0.0) lowest = result.price;
+        highest = result.price;
+        previous = result.price;
+    }
+
+    CHECK_MSG(highest - lowest > 0.10,
+              "the price barely moved across the equilibrium range -- mean reversion is not "
+              "reaching the result, which is what the GBM-anchored control variate used to do");
+}
+
 // End-to-end anchor at a much lower path count than --self-test uses, so a
 // systematic break in the simulator shows up here as a fast, isolated failure.
 TEST(geometric_asian_price_matches_the_closed_form) {

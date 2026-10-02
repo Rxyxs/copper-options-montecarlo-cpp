@@ -52,7 +52,8 @@ De ese caso de uso se derivan directamente dos objetivos de diseño:
 | Métrica | Resultado | Qué significa |
 |---|---|---|
 | Speedup paralelo, 16 hilos vs. secuencial | **9,64x** (853.558 vs. 88.559 paths/seg) | Un precio de varios segundos en un núcleo pasa a menos de un segundo, reportado honestamente como sub-lineal (hyperthreading/ancho de banda de memoria), no como 16x |
-| Reducción de varianza, ambas técnicas on vs. off | **19,7x** más estrecho (error estándar 0,0000256 vs. 0,000504) | Medido como un A/B controlado: mismo modelo, misma opción, mismas 1M trayectorias, misma semilla — solo cambian los flags ([desglose abajo](#reducción-de-varianza-medida-como-un-ab-controlado)) |
+| Reducción de varianza bajo GBM, ambas técnicas on vs. off | **19,7x** más estrecho (error estándar 0,0000256 vs. 0,000504) | Medido como un A/B controlado: mismo modelo, misma opción, mismas 1M trayectorias, misma semilla — solo cambian los flags ([desglose abajo](#reducción-de-varianza-medida-como-un-ab-controlado)) |
+| Sesgo de la variable de control, encontrado y corregido | Precio Schwartz corregido 0,2997 → **0,1663** | El ancla derivada de GBM se estaba aplicando a un modelo con reversión a la media, aplanando su respuesta al nivel de equilibrio de 0,312 a 0,013 ([análisis](#la-variable-de-control-estaba-sesgando-todos-los-precios-schwartz)) |
 | Self-test vs. precio de forma cerrada (GBM) | diferencia 0,000712, dentro de tolerancia 4×error estándar | Verificación pass/fail de correctitud en cada ejecución, no un chequeo manual único |
 | Self-test de paridad put-call de Heston | diferencia 0,000140, dentro de tolerancia 4×error estándar | Valida el modelo de volatilidad estocástica aunque no tenga precio asiático de forma cerrada |
 | Throughput sostenido | ~1,2-1,4M paths/seg | Plano a través de distintos números de trayectorias -- la firma esperada de una carga genuinamente paralela sin dependencias |
@@ -102,12 +103,14 @@ trayectorias caían en qué hilo).
   trade-off real de discretización en `MarketModel.h`, no escondido.
 - **Reducción de varianza**: variables antitéticas (gratis — la trayectoria
   negada reutiliza los mismos sorteos aleatorios, sin costo adicional de
-  RNG) más, para GBM/Schwartz, una variable de control de promedio
+  RNG) más, **solo para GBM**, una variable de control de promedio
   geométrico anclada al precio cerrado de Kemna-Vorst (medido en **16,4x**
   más estrecho por sí sola, 19,7x combinada con antitéticas — ver el A/B
-  controlado abajo). Heston no tiene un ancla geométrico-asiática cerrada, así que cae
-  a solo-antitéticas — documentado, no aplicado en silencio donde no sería
-  válido.
+  controlado abajo). Ni Schwartz ni Heston tienen un ancla geométrico-asiática
+  cerrada válida, así que ambos caen a solo-antitéticas, que sobre el default
+  Schwartz vale 1,25x. Heston siempre estuvo excluido; Schwartz no, y aplicarle
+  el ancla de GBM estaba sesgando todos los precios que producía el modelo por
+  defecto — [el análisis está acá](#la-variable-de-control-estaba-sesgando-todos-los-precios-schwartz).
 - **RNG**: `std::mt19937_64` alimentando un generador normal Marsaglia-polar
   hecho a mano (sin `sin`/`cos`, solo `sqrt`/`log`, cachea el valor
   sobrante).
@@ -227,6 +230,75 @@ propiedad que una técnica de reducción de varianza debe cumplir: puede
 estrechar el intervalo, nunca mover la estimación. La variable de control hace
 casi todo el trabajo; las antitéticas suman ~1,2x adicional por encima.
 
+**Ese A/B corre bajo GBM, y ese detalle resultó importar muchísimo.** Es el
+único modelo donde esta variable de control es válida, cosa que la tabla de
+arriba establece pero que el motor no hacía cumplir.
+
+### La variable de control estaba sesgando todos los precios Schwartz
+
+`ClosedFormAsian::geometricAsianPrice` es la fórmula de Kemna-Vorst, derivada
+para GBM: toma la media del promedio geométrico como
+`ln S0 + (r - q - σ²/2)·T/2` y su varianza como `σ²·T/3`. Heston ya estaba
+excluido de usarla como ancla, correctamente, porque la fórmula asume
+volatilidad constante. **Schwartz no estaba excluido, y debería haberlo
+estado** — bajo reversión a la media el log-precio es un proceso de
+Ornstein-Uhlenbeck, así que ninguna de esas dos expresiones se cumple.
+
+Una variable de control solo funciona cuando el término que resta tiene media
+cero. Anclá una simulación Schwartz a la esperanza de GBM y ese término pasa a
+tener una media grande distinta de cero, así que la "corrección" arrastra la
+estimación hacia el precio GBM. Medido con los defaults, 1.000.000 de
+trayectorias:
+
+| Modelo | CV aplicada | Precio | Error estándar |
+|---|---|---|---|
+| GBM | sí | 0,307187 | 0,000024 |
+| GBM | no | 0,308175 | 0,000483 |
+| Schwartz | **sí (el bug)** | 0,299721 | 0,000011 |
+| Schwartz | no | **0,166335** | 0,000221 |
+
+Bajo GBM los dos coinciden en 0,001 sobre un precio de 0,307 — unos 27 puntos
+básicos, que es la brecha conocida entre promediado continuo y discreto que el
+propio header de la fórmula cerrada documenta. Bajo Schwartz difieren en
+**0,133 sobre un precio de 0,166**, cerca del 80%, que no es un error de
+aproximación.
+
+**Lo que lo vuelve peor que un número equivocado es lo que le hacía al
+modelo.** Schwartz existe en este proyecto para valorizar reversión a la media
+— esa es toda la razón de elegirlo por sobre GBM para un commodity. Barriendo
+el nivel de equilibrio sobre un rango amplio, 500.000 trayectorias cada uno:
+
+| Nivel de equilibrio θ | Precio, CV activa (con bug) | Precio, CV apagada (correcto) |
+|---|---|---|
+| 3,80 | 0,295897 | 0,080843 |
+| 4,30 (default) | 0,299723 | 0,166398 |
+| 4,50 | 0,301535 | 0,209711 |
+| 5,20 | 0,308950 | 0,392866 |
+
+Correctamente, el call recorre **0,312** a medida que se mueve el nivel de
+equilibrio — un precio del cobre traccionado hacia 3,80 deja un call at-the-money
+casi sin valor, traccionado hacia 5,20 lo vuelve valioso. Con la variable de
+control activa toda esa respuesta colapsaba a **0,013**, clavada cerca de la
+respuesta GBM de ~0,307 sin importar en qué se fijara θ. El parámetro que
+define al modelo había dejado de llegar al resultado.
+
+**El arreglo** es una condición: la variable de control ahora se aplica solo a
+GBM, por la misma razón por la que Heston ya estaba excluido. Schwartz y Heston
+caen a Monte Carlo simple con antitéticas, lo que cuesta un intervalo más ancho
+para la misma cantidad de trayectorias — el error estándar del default pasa de
+un reportado 0,000005 a un honesto 0,000111 — y recupera un precio que responde
+al modelo.
+
+**Por qué la suite de tests existente no lo detectó.** Ya había un test llamado
+`control_variate_cuts_variance_without_biasing_the_price`, y verifica
+exactamente la propiedad correcta. Solo que corría únicamente bajo GBM, el único
+modelo donde la propiedad se cumplía, mientras que el modelo por defecto del CLI
+es Schwartz. La propiedad estaba bien; su cobertura no. Ahora dos tests lo
+protegen: `control_variate_does_not_bias_the_price_under_any_model` corre el
+mismo chequeo sobre los tres modelos, y
+`schwartz_price_responds_to_the_equilibrium_level` verifica el comportamiento
+económico directo, fallando si el precio deja de moverse con θ.
+
 ### Un bug en el error estándar que esta medición dejó al descubierto
 
 Correr ese A/B fue lo que expuso un defecto real: las antitéticas *sí* estaban
@@ -259,16 +331,19 @@ sus dos tests de antitéticas fallan contra el motor previo al fix.
 
 **Call asiático sobre cobre** — modelo Schwartz de reversión a la media,
 spot = strike = 4.50 USD/lb, madurez de 1 año, 252 fixings diarios, σ =
-0.28, r = 0.045, 4.000.000 trayectorias, con antitéticas + variable de
-control activadas:
+0.28, r = 0.045, 4.000.000 trayectorias, con antitéticas activadas (la
+variable de control no aplica a este modelo — ver arriba):
 
 | Métrica | Valor |
 |---|---|
-| Precio | 0.299707 USD |
-| Error estándar | 0.000005 |
-| IC 95% | [0.299696, 0.299718] |
-| Throughput | 1.319.709 trayectorias/seg |
-| Tiempo transcurrido | 3.03 s |
+| Precio | 0.166264 USD |
+| Error estándar | 0.000111 |
+| IC 95% | [0.166047, 0.166481] |
+| Throughput | 1.387.622 trayectorias/seg |
+| Tiempo transcurrido | 2.88 s |
+
+Esta tabla antes decía 0.299707 con un error estándar de 0.000005. Los dos
+números estaban mal, y la sección de más arriba es la corrección.
 
 **Escalamiento por hilos** (misma opción, 4.000.000 trayectorias,
 `--benchmark-scaling`):

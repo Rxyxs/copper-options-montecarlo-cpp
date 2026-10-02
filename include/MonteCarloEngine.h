@@ -38,6 +38,11 @@ struct SimulationResult {
     double pathsPerSecond = 0.0;
     size_t numPaths = 0;
     unsigned numThreads = 0;
+    // Whether the control variate was actually applied, which is not the same
+    // as having been requested: the engine declines it for models with no valid
+    // analytic anchor. Reported here so callers read one source of truth
+    // instead of re-deriving the condition and drifting out of sync with it.
+    bool controlVariateApplied = false;
 };
 
 namespace detail {
@@ -74,6 +79,16 @@ inline uint64_t splitmix64(uint64_t x) {
 
 class MonteCarloEngine {
 public:
+    // Whether the geometric control variate will actually be applied for this
+    // request. Public so a caller can report it before running the simulation
+    // (the CLI banner does) without re-deriving the rule and drifting out of
+    // sync, which is how the Schwartz bias survived as long as it did.
+    static bool controlVariateApplies(const MarketParams& mp, const AsianOptionSpec& spec,
+                                       const SimulationConfig& cfg) {
+        return cfg.controlVariate && spec.averaging == AveragingType::Arithmetic
+               && mp.model == ModelType::GeometricBrownianMotion;
+    }
+
     static SimulationResult price(const MarketParams& mp, const AsianOptionSpec& spec,
                                    const SimulationConfig& cfg) {
         using namespace detail;
@@ -83,12 +98,27 @@ public:
         }
 
         const double discount = std::exp(-mp.r * spec.maturity);
-        const bool useControlVariate = cfg.controlVariate && spec.averaging == AveragingType::Arithmetic
-                                        && mp.model != ModelType::Heston;
-        // Heston has no closed-form geometric-Asian anchor (ClosedFormAsian
-        // assumes constant sigma), so the geometric control variate is only
-        // applied for GBM/Schwartz -- Heston pricing falls back to plain MC
-        // (still with antithetic variates), documented in the README.
+        const bool useControlVariate = controlVariateApplies(mp, spec, cfg);
+        // The geometric control variate is only valid for GBM, because its
+        // analytic anchor (ClosedFormAsian::geometricAsianPrice) is the
+        // Kemna-Vorst formula, derived for GBM dynamics specifically.
+        //
+        // Heston was already excluded: the formula assumes constant sigma.
+        // Schwartz is excluded for the same class of reason and used not to be,
+        // which was a real bug. Under mean reversion the log-price is an
+        // Ornstein-Uhlenbeck process, so the geometric average's mean is not
+        // ln S0 + (r - q - sigma^2/2) T/2 and its variance is not sigma^2 T/3.
+        // Anchoring to the GBM value therefore does not subtract a mean-zero
+        // term: it drags the estimate toward the GBM price. Measured at the
+        // defaults, it moved the Schwartz price from 0.1664 to 0.2997, and it
+        // flattened the price's response to theta (the equilibrium level) from
+        // a 0.312 swing across theta in [3.80, 5.20] down to 0.013 -- that is,
+        // it cancelled out the model's defining parameter. See
+        // test_engine_properties.cpp::control_variate_does_not_bias_the_price_under_any_model.
+        //
+        // Both excluded models fall back to plain MC, still with antithetic
+        // variates, at the cost of a wider confidence interval for the same
+        // path count.
         const double geoClosedForm =
             useControlVariate ? ClosedFormAsian::geometricAsianPrice(mp, spec) : 0.0;
         const double dt = spec.maturity / static_cast<double>(spec.numAveragingPoints);
@@ -143,6 +173,7 @@ public:
         result.numPaths = cfg.numPaths;
         result.numThreads =
             cfg.numThreads == 1 ? 1u : std::max(1u, std::thread::hardware_concurrency());
+        result.controlVariateApplied = useControlVariate;
         return result;
     }
 
