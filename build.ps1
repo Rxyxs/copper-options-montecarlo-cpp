@@ -51,6 +51,23 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "Build succeeded: $binDir\copper_mc.exe"
 
+# -Figures compila y corre el generador de figuras del README. Vive aparte del
+# pricer porque reprecia varias veces para medir barridos y dispersiones, cosa
+# que el binario principal no tiene por que hacer.
+if ($args -contains "-Figures") {
+    Write-Host "Building make_figures..."
+    $figCmd = "call `"$vcvars`" >nul && cl.exe /std:c++20 /EHsc /W4 /nologo $optFlags " +
+              "/I `"$root\include`" `"$root\tools\make_figures.cpp`" " +
+              "/Fe:`"$binDir\make_figures.exe`" /Fo:`"$binDir\fig_`""
+    cmd.exe /c $figCmd
+    if ($LASTEXITCODE -ne 0) { throw "Build failed for make_figures (exit code $LASTEXITCODE)" }
+
+    $figDir = Join-Path $root "docs\figures"
+    New-Item -ItemType Directory -Force -Path $figDir | Out-Null
+    & "$binDir\make_figures.exe" --outdir $figDir
+    if ($LASTEXITCODE -ne 0) { throw "Figure generation failed" }
+}
+
 if ($withTests) {
     foreach ($suite in @("test_pricing_math", "test_engine_properties")) {
         Write-Host "Building $suite..."

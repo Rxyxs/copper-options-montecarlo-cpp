@@ -150,6 +150,7 @@ ctest --test-dir build -C Release        # --self-test + ambas suites (ver Tests
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 powershell -ExecutionPolicy Bypass -File .\build.ps1 -Tests   # además compila y corre las suites
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -Figures # redibuja las figuras del README en SVG
 ```
 
 `build.ps1` ubica `vcvars64.bat` automáticamente y compila `src/main.cpp`
@@ -225,6 +226,15 @@ GBM, call de promedio aritmético, spot = strike = 4,50, 1 año, 252 fixings,
 | Solo variable de control | 0.332934 | 0.00003081 | **16,37x** |
 | Ambas (default del repo) | 0.332874 | 0.00002555 | **19,74x** |
 
+![Error estándar por configuración y modelo](docs/figures/variance_reduction_ab.svg)
+
+Cada barra se compara contra el baseline de Monte Carlo simple **de su propio
+modelo**, que es justamente la comparación que el viejo "~46x" hacía mal al
+mezclar dos. También muestra el costo del arreglo sin vueltas: el default
+Schwartz ahora recibe solo muestreo antitético, que vale 1,25x, mientras GBM
+obtiene 19,96x con ambas técnicas.
+
+
 Los cuatro precios coinciden dentro de sus propias barras de error, que es la
 propiedad que una técnica de reducción de varianza debe cumplir: puede
 estrechar el intervalo, nunca mover la estimación. La variable de control hace
@@ -274,6 +284,15 @@ el nivel de equilibrio sobre un rango amplio, 500.000 trayectorias cada uno:
 | 4,30 (default) | 0,299723 | 0,166398 |
 | 4,50 | 0,301535 | 0,209711 |
 | 5,20 | 0,308950 | 0,392866 |
+
+![Precio del call Schwartz contra el nivel de equilibrio](docs/figures/schwartz_theta_response.svg)
+
+La curva roja es el modelo haciendo su trabajo, re-medida en vivo por el
+generador de figuras y no copiada de esta tabla. La línea punteada es el precio
+GBM, y la banda gris es los 0,013 de margen que el precio tenía mientras el bug
+estaba activo — un modelo que respondía lo mismo sin importar qué se le dijera
+sobre el nivel de equilibrio del cobre.
+
 
 Correctamente, el call recorre **0,312** a medida que se mueve el nivel de
 equilibrio — un precio del cobre traccionado hacia 3,80 deja un call at-the-money
@@ -348,6 +367,8 @@ números estaban mal, y la sección de más arriba es la corrección.
 **Escalamiento por hilos** (misma opción, 4.000.000 trayectorias,
 `--benchmark-scaling`):
 
+![Speedup medido contra el escalamiento lineal perfecto](docs/figures/thread_scaling.svg)
+
 | Hilos | Throughput |
 |---|---|
 | 1 (`std::execution::seq`) | 88.559 trayectorias/seg |
@@ -395,7 +416,11 @@ copper-options-montecarlo-cpp/
 ├── tests/
 │   ├── test_framework.h            # harness de aserciones (~90 lineas, sin dependencias)
 │   ├── test_pricing_math.cpp       # 12 casos: promedios, payoffs, formula cerrada
-│   └── test_engine_properties.cpp  # 10 casos: reproducibilidad, reduccion de varianza, convergencia
+│   └── test_engine_properties.cpp  # 12 casos: reproducibilidad, reduccion de varianza, convergencia,
+│                                   #   sesgo de la variable de control en todos los modelos, respuesta a theta
+├── tools/
+│   └── make_figures.cpp            # Figuras del README, emitidas como SVG escrito a mano (sin libreria de graficos)
+└── docs/figures/                   # Los SVG generados, incrustados mas arriba
 ├── CMakeLists.txt
 ├── build.ps1
 ├── LICENSE
@@ -424,6 +449,14 @@ paridad put-call, monotonía en el strike, signo del vega y el límite deep-ITM.
 `tests/test_engine_properties.cpp` (10 casos) testea las afirmaciones que este
 README hace sobre el motor, en vez de volver a chequear el precio:
 
+![Error estándar contra cantidad de trayectorias, log-log](docs/figures/convergence_one_over_sqrt_n.svg)
+
+El chequeo de convergencia hecho imagen: los errores medidos caen sobre la
+pendiente teórica de -1/2, y comprar un intervalo 5,7x más estrecho por fuerza
+bruta cuesta 32x las trayectorias. Esa razón es todo el argumento económico de
+la reducción de varianza, y la razón de que perder la variable de control en
+Schwartz sea un costo real y no una nota al pie.
+
 | Propiedad testeada | Por qué si no puede fallar en silencio |
 |---|---|
 | Secuencial y paralelo coinciden a ~1e-15 relativo | El sembrado `splitmix64` por item de trabajo es lo que hace el resultado independiente del número de hilos; una regresión acá es invisible en cualquier corrida individual |
@@ -431,6 +464,8 @@ README hace sobre el motor, en vez de volver a chequear el precio:
 | Las antitéticas bajan el error estándar reportado | Falla contra el motor previo al fix (el ratio era exactamente 1,000) |
 | El error estándar reportado está calibrado contra la dispersión real en 40 semillas | Detecta un estimador que reporta un número sin relación con su error real; el motor previo al fix marca 1,29 acá contra una banda de 0,85-1,18 |
 | El error estándar decae como 1/√N | La propiedad que define a Monte Carlo; nada más en el repo la verificaba |
+| La variable de control no sesga el precio **bajo ningún modelo** | La versión previa de este chequeo corría solo bajo GBM, el único modelo donde se cumplía, mientras el default del CLI es Schwartz |
+| El precio Schwartz responde al nivel de equilibrio | Protege el comportamiento económico que la variable de control sesgada había aplanado; un precio que ignora θ no está valorizando reversión a la media |
 | La variable de control reduce varianza *sin* mover el precio | Una "reducción de varianza" que desplaza la estimación es un bug con una barra de error más chica |
 | El precio MC geométrico coincide con Kemna-Vorst a bajo número de trayectorias | Localiza una falla del simulador más rápido que el self-test de 2M |
 | `numAveragingPoints` excesivo lanza excepción | El buffer de trayectoria es un arreglo de tamaño fijo en el stack; desbordarlo en silencio sería corrupción de memoria, no un precio equivocado |

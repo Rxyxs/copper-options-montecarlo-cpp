@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="900" height="560" fill="#FFFFFF"/>
+  <line x1="92" y1="484" x2="852" y2="484" stroke="#D9D9D9" stroke-width="0.8"/>
+  <text x="84" y="488" font-size="11" fill="#6A6A6A" text-anchor="end">0.000139</text>
+  <line x1="92" y1="390" x2="852" y2="390" stroke="#D9D9D9" stroke-width="0.8"/>
+  <text x="84" y="394" font-size="11" fill="#6A6A6A" text-anchor="end">0.000240</text>
+  <line x1="92" y1="296" x2="852" y2="296" stroke="#D9D9D9" stroke-width="0.8"/>
+  <text x="84" y="300" font-size="11" fill="#6A6A6A" text-anchor="end">0.000416</text>
+  <line x1="92" y1="202" x2="852" y2="202" stroke="#D9D9D9" stroke-width="0.8"/>
+  <text x="84" y="206" font-size="11" fill="#6A6A6A" text-anchor="end">0.000721</text>
+  <line x1="92" y1="108" x2="852" y2="108" stroke="#D9D9D9" stroke-width="0.8"/>
+  <text x="84" y="112" font-size="11" fill="#6A6A6A" text-anchor="end">0.001248</text>
+  <line x1="92" y1="484" x2="852" y2="484" stroke="#B9B9B9" stroke-width="1.2"/>
+  <line x1="92" y1="108" x2="92" y2="484" stroke="#B9B9B9" stroke-width="1.2"/>
+  <line x1="92" y1="127.71" x2="852" y2="463.82" stroke="#8A8A8A" stroke-width="1.6" stroke-dasharray="6,4"/>
+  <text x="846" y="453.82" font-size="11" fill="#8A8A8A" text-anchor="end">slope -1/2 (the 1/sqrt(N) law)</text>
+  <polyline fill="none" stroke="#B5553D" stroke-width="2.2" points="136.57,147.42 270.74,206.42 404.91,265.75 539.09,325.54 673.26,384.96 807.43,444.58 "/>
+  <circle cx="136.57" cy="147.42" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <circle cx="270.74" cy="206.42" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <circle cx="404.91" cy="265.75" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <circle cx="539.09" cy="325.54" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <circle cx="673.26" cy="384.96" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <circle cx="807.43" cy="444.58" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <line x1="136.57" y1="484" x2="136.57" y2="489" stroke="#B9B9B9" stroke-width="1"/>
+  <text x="136.57" y="504" font-size="10" fill="#6A6A6A" text-anchor="middle">50,000</text>
+  <line x1="270.74" y1="484" x2="270.74" y2="489" stroke="#B9B9B9" stroke-width="1"/>
+  <text x="270.74" y="504" font-size="10" fill="#6A6A6A" text-anchor="middle">100,000</text>
+  <line x1="404.91" y1="484" x2="404.91" y2="489" stroke="#B9B9B9" stroke-width="1"/>
+  <text x="404.91" y="504" font-size="10" fill="#6A6A6A" text-anchor="middle">200,000</text>
+  <line x1="539.09" y1="484" x2="539.09" y2="489" stroke="#B9B9B9" stroke-width="1"/>
+  <text x="539.09" y="504" font-size="10" fill="#6A6A6A" text-anchor="middle">400,000</text>
+  <line x1="673.26" y1="484" x2="673.26" y2="489" stroke="#B9B9B9" stroke-width="1"/>
+  <text x="673.26" y="504" font-size="10" fill="#6A6A6A" text-anchor="middle">800,000</text>
+  <line x1="807.43" y1="484" x2="807.43" y2="489" stroke="#B9B9B9" stroke-width="1"/>
+  <text x="807.43" y="504" font-size="10" fill="#6A6A6A" text-anchor="middle">1,600,000</text>
+  <text x="472" y="544" font-size="12" fill="#2B2B2B" text-anchor="middle">paths (log scale)</text>
+  <text x="16" y="94" font-size="12" fill="#2B2B2B" text-anchor="start">standard error (log scale)</text>
+  <text x="92" y="36" font-size="16" fill="#2B2B2B" text-anchor="start" font-weight="600">The error falls exactly as fast as theory says, and no faster</text>
+  <text x="92" y="58" font-size="12" fill="#6A6A6A" text-anchor="start">Schwartz default. Going from 50,000 to 1,600,000 paths cut the error 5.67x, against the 5.66x the 1/sqrt(N) law predicts.</text>
+  <text x="92" y="78" font-size="12" fill="#2B2B2B" text-anchor="start">This is also why variance reduction matters: buying the same factor by brute force costs 32x the compute.</text>
+</svg>

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="560" viewBox="0 0 980 560" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="980" height="560" fill="#FFFFFF"/>
+  <rect x="210" y="129.78" width="620" height="38.44" fill="#6E8CA0" fill-opacity="1" stroke="#FFFFFF" stroke-width="1.2"/>
+  <text x="200" y="153" font-size="12" fill="#2B2B2B" text-anchor="end">GBM: plain MC</text>
+  <text x="840" y="153" font-size="11" fill="#2B2B2B" text-anchor="start">stderr 0.000763   (1.00x vs plain MC, same model)</text>
+  <rect x="210" y="191.78" width="477.96" height="38.44" fill="#6E8CA0" fill-opacity="1" stroke="#FFFFFF" stroke-width="1.2"/>
+  <text x="200" y="215" font-size="12" fill="#2B2B2B" text-anchor="end">GBM: antithetic</text>
+  <text x="697.96" y="215" font-size="11" fill="#2B2B2B" text-anchor="start">stderr 0.000588   (1.30x vs plain MC, same model)</text>
+  <rect x="210" y="253.78" width="37.26" height="38.44" fill="#6E8CA0" fill-opacity="1" stroke="#FFFFFF" stroke-width="1.2"/>
+  <text x="200" y="277" font-size="12" fill="#2B2B2B" text-anchor="end">GBM: control variate</text>
+  <text x="257.26" y="277" font-size="11" fill="#2B2B2B" text-anchor="start">stderr 0.000046   (16.64x vs plain MC, same model)</text>
+  <rect x="210" y="315.78" width="31.06" height="38.44" fill="#6E8CA0" fill-opacity="1" stroke="#FFFFFF" stroke-width="1.2"/>
+  <text x="200" y="339" font-size="12" fill="#2B2B2B" text-anchor="end">GBM: both</text>
+  <text x="251.06" y="339" font-size="11" fill="#2B2B2B" text-anchor="start">stderr 0.000038   (19.96x vs plain MC, same model)</text>
+  <rect x="210" y="377.78" width="355.62" height="38.44" fill="#B5553D" fill-opacity="1" stroke="#FFFFFF" stroke-width="1.2"/>
+  <text x="200" y="401" font-size="12" fill="#2B2B2B" text-anchor="end">Schwartz: plain MC</text>
+  <text x="575.62" y="401" font-size="11" fill="#2B2B2B" text-anchor="start">stderr 0.000438   (1.00x vs plain MC, same model)</text>
+  <rect x="210" y="439.78" width="284.64" height="38.44" fill="#B5553D" fill-opacity="1" stroke="#FFFFFF" stroke-width="1.2"/>
+  <text x="200" y="463" font-size="12" fill="#2B2B2B" text-anchor="end">Schwartz: antithetic</text>
+  <text x="504.64" y="463" font-size="11" fill="#2B2B2B" text-anchor="start">stderr 0.000350   (1.25x vs plain MC, same model)</text>
+  <line x1="210" y1="118" x2="210" y2="490" stroke="#B9B9B9" stroke-width="1.2"/>
+  <text x="92" y="36" font-size="16" fill="#2B2B2B" text-anchor="start" font-weight="600">Variance reduction, and where each technique is allowed to apply</text>
+  <text x="92" y="58" font-size="12" fill="#6A6A6A" text-anchor="start">Same option, same 400,000 paths, same seed; only the flags and the model change. Shorter is better.</text>
+  <text x="92" y="78" font-size="12" fill="#2B2B2B" text-anchor="start">The control variate carries almost all of the gain -- but it is only valid under GBM, so the Schwartz default gets antithetic sampling alone.</text>
+  <text x="92" y="96" font-size="12" fill="#2B2B2B" text-anchor="start">That is the real cost of the fix: a correct price with a wider interval, instead of a tight interval around a biased one.</text>
+  <text x="520" y="538" font-size="12" fill="#2B2B2B" text-anchor="middle">reported standard error</text>
+</svg>

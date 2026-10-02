@@ -140,6 +140,7 @@ ctest --test-dir build -C Release        # --self-test + both test suites (see T
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 powershell -ExecutionPolicy Bypass -File .\build.ps1 -Tests   # also builds + runs the test suites
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -Figures # redraws the README figures as SVG
 ```
 
 `build.ps1` locates `vcvars64.bat` automatically and compiles
@@ -212,6 +213,14 @@ GBM, arithmetic-average call, spot = strike = 4.50, 1-year, 252 fixings,
 | Control variate only | 0.332934 | 0.00003081 | **16.37x** |
 | Both (shipped default) | 0.332874 | 0.00002555 | **19.74x** |
 
+![Standard error by configuration and model](docs/figures/variance_reduction_ab.svg)
+
+Each bar is compared against the plain-MC baseline **of its own model**, which
+is the comparison the earlier "~46x" claim got wrong by mixing two. It also
+shows the price of the fix plainly: the Schwartz default now gets antithetic
+sampling alone, worth 1.25x, where GBM gets 19.96x from both techniques.
+
+
 All four prices agree inside their own error bars, which is the property a
 variance-reduction technique must have: it may shrink the interval, never
 move the estimate. The control variate does nearly all the work; antithetic
@@ -259,6 +268,15 @@ level across a wide range, 500,000 paths each:
 | 4.30 (default) | 0.299723 | 0.166398 |
 | 4.50 | 0.301535 | 0.209711 |
 | 5.20 | 0.308950 | 0.392866 |
+
+![Schwartz call price against the equilibrium level](docs/figures/schwartz_theta_response.svg)
+
+The red curve is the model doing its job, re-measured live by the figure
+generator rather than copied from this table. The dashed line is the GBM
+price, and the grey band is the 0.013 of room the price had while the bug was
+live — a model that answered the same thing whatever you told it about
+copper's equilibrium level.
+
 
 Correctly, the call ranges over **0.312** as the equilibrium level moves —
 a copper price pulled toward 3.80 makes an at-the-money call nearly
@@ -332,6 +350,8 @@ numbers were wrong, and the section below is the correction.
 
 **Thread scaling** (same option, 4,000,000 paths, `--benchmark-scaling`):
 
+![Measured speedup against perfect linear scaling](docs/figures/thread_scaling.svg)
+
 | Threads | Throughput |
 |---|---|
 | 1 (`std::execution::seq`) | 88,559 paths/sec |
@@ -377,7 +397,11 @@ copper-options-montecarlo-cpp/
 ├── tests/
 │   ├── test_framework.h            # ~90-line assertion harness, no dependencies
 │   ├── test_pricing_math.cpp       # 12 cases: averaging, payoffs, closed form
-│   └── test_engine_properties.cpp  # 10 cases: reproducibility, variance reduction, convergence
+│   └── test_engine_properties.cpp  # 12 cases: reproducibility, variance reduction, convergence,
+│                                   #   control-variate bias across all models, Schwartz theta response
+├── tools/
+│   └── make_figures.cpp            # README figures, emitted as hand-written SVG (no plotting library)
+└── docs/figures/                   # the generated SVGs embedded above
 ├── CMakeLists.txt
 ├── build.ps1
 ├── LICENSE
@@ -406,6 +430,14 @@ strike monotonicity, vega sign, and deep-ITM limit.
 `tests/test_engine_properties.cpp` (10 cases) tests the claims this README
 makes about the engine rather than re-checking the price:
 
+![Standard error against path count, log-log](docs/figures/convergence_one_over_sqrt_n.svg)
+
+The convergence check as a picture: the measured errors sit on the theoretical
+-1/2 slope, and buying a 5.7x tighter interval by brute force costs 32x the
+paths. That ratio is the whole economic argument for variance reduction, and
+the reason losing the control variate on Schwartz is a real cost rather than a
+footnote.
+
 | Property tested | Why it can fail silently otherwise |
 |---|---|
 | Sequential and parallel agree to ~1e-15 relative | The per-work-item `splitmix64` seeding is what makes results thread-count-independent; a regression here is invisible in any single run |
@@ -413,6 +445,8 @@ makes about the engine rather than re-checking the price:
 | Antithetic sampling lowers the reported stderr | Fails against the pre-fix engine (ratio was exactly 1.000) |
 | Reported stderr is calibrated against the true spread over 40 seeds | Catches an estimator that reports a number unrelated to its actual error; the pre-fix engine scores 1.29 here vs. a 0.85–1.18 band |
 | Std. error decays as 1/√N | The defining property of Monte Carlo; nothing else in the repo checked it |
+| Control variate does not bias the price **under any model** | The pre-existing version of this check only ran under GBM, the one model where it held, while the CLI default is Schwartz |
+| Schwartz price responds to the equilibrium level | Guards the economic behaviour the biased control variate had flattened; a price that ignores θ is not pricing mean reversion |
 | Control variate cuts variance *without* moving the price | A "variance reduction" that shifts the estimate is a bug with a smaller error bar |
 | MC geometric price matches Kemna-Vorst at low path count | Localizes a simulator break faster than the 2M-path self-test |
 | Oversized `numAveragingPoints` throws | The path buffer is a fixed-size stack array; silently overflowing it would be memory corruption, not a wrong price |

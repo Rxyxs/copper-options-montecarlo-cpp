@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="580" viewBox="0 0 960 580" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="960" height="580" fill="#FFFFFF"/>
+  <line x1="92" y1="504" x2="916" y2="504" stroke="#D9D9D9" stroke-width="0.8"/>
+  <text x="84" y="508" font-size="11" fill="#6A6A6A" text-anchor="end">0.00</text>
+  <line x1="92" y1="425.6" x2="916" y2="425.6" stroke="#D9D9D9" stroke-width="0.8"/>
+  <text x="84" y="429.6" font-size="11" fill="#6A6A6A" text-anchor="end">0.12</text>
+  <line x1="92" y1="347.2" x2="916" y2="347.2" stroke="#D9D9D9" stroke-width="0.8"/>
+  <text x="84" y="351.2" font-size="11" fill="#6A6A6A" text-anchor="end">0.24</text>
+  <line x1="92" y1="268.8" x2="916" y2="268.8" stroke="#D9D9D9" stroke-width="0.8"/>
+  <text x="84" y="272.8" font-size="11" fill="#6A6A6A" text-anchor="end">0.36</text>
+  <line x1="92" y1="190.4" x2="916" y2="190.4" stroke="#D9D9D9" stroke-width="0.8"/>
+  <text x="84" y="194.4" font-size="11" fill="#6A6A6A" text-anchor="end">0.48</text>
+  <line x1="92" y1="112" x2="916" y2="112" stroke="#D9D9D9" stroke-width="0.8"/>
+  <text x="84" y="116" font-size="11" fill="#6A6A6A" text-anchor="end">0.60</text>
+  <line x1="92" y1="504" x2="916" y2="504" stroke="#B9B9B9" stroke-width="1.2"/>
+  <line x1="92" y1="112" x2="92" y2="504" stroke="#B9B9B9" stroke-width="1.2"/>
+  <rect x="92" y="302.12" width="824" height="8.56" fill="#8A8A8A" fill-opacity="0.22" stroke="#FFFFFF" stroke-width="1.2"/>
+  <text x="102" y="295.12" font-size="11" fill="#6A6A6A" text-anchor="start">range the price was trapped in while the bug was live: 0.013 wide</text>
+  <line x1="92" y1="303.3" x2="916" y2="303.3" stroke="#6E8CA0" stroke-width="1.6" stroke-dasharray="6,4"/>
+  <text x="910" y="319.3" font-size="11" fill="#6E8CA0" text-anchor="end">GBM price 0.3072 -- what the GBM anchor pulled toward</text>
+  <polyline fill="none" stroke="#B5553D" stroke-width="2.4" points="129.45,467.14 204.36,451.08 279.27,431.37 391.64,395.14 466.55,366.85 578.91,319 728.73,247.2 878.55,169.11 "/>
+  <circle cx="129.45" cy="467.14" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <circle cx="204.36" cy="451.08" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <circle cx="279.27" cy="431.37" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <circle cx="391.64" cy="395.14" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <circle cx="466.55" cy="366.85" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <circle cx="578.91" cy="319" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <circle cx="728.73" cy="247.2" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <circle cx="878.55" cy="169.11" r="5" fill="#B5553D" stroke="#FFFFFF" stroke-width="1.4"/>
+  <text x="137.45" y="455.14" font-size="11" fill="#B5553D" text-anchor="start" font-weight="600">0.0564</text>
+  <text x="870.55" y="157.11" font-size="11" fill="#B5553D" text-anchor="end" font-weight="600">0.5126</text>
+  <line x1="129.45" y1="504" x2="129.45" y2="509" stroke="#B9B9B9" stroke-width="1"/>
+  <text x="129.45" y="524" font-size="11" fill="#6A6A6A" text-anchor="middle">3.60</text>
+  <line x1="279.27" y1="504" x2="279.27" y2="509" stroke="#B9B9B9" stroke-width="1"/>
+  <text x="279.27" y="524" font-size="11" fill="#6A6A6A" text-anchor="middle">4.00</text>
+  <line x1="391.64" y1="504" x2="391.64" y2="509" stroke="#B9B9B9" stroke-width="1"/>
+  <text x="391.64" y="524" font-size="11" fill="#6A6A6A" text-anchor="middle">4.30</text>
+  <line x1="578.91" y1="504" x2="578.91" y2="509" stroke="#B9B9B9" stroke-width="1"/>
+  <text x="578.91" y="524" font-size="11" fill="#6A6A6A" text-anchor="middle">4.80</text>
+  <line x1="728.73" y1="504" x2="728.73" y2="509" stroke="#B9B9B9" stroke-width="1"/>
+  <text x="728.73" y="524" font-size="11" fill="#6A6A6A" text-anchor="middle">5.20</text>
+  <line x1="878.55" y1="504" x2="878.55" y2="509" stroke="#B9B9B9" stroke-width="1"/>
+  <text x="878.55" y="524" font-size="11" fill="#6A6A6A" text-anchor="middle">5.60</text>
+  <text x="391.64" y="542" font-size="11" fill="#8A8A8A" text-anchor="middle">spot = 4.50</text>
+  <text x="504" y="564" font-size="12" fill="#2B2B2B" text-anchor="middle">Schwartz equilibrium price level</text>
+  <text x="16" y="98" font-size="12" fill="#2B2B2B" text-anchor="start">call price (USD/lb)</text>
+  <text x="92" y="36" font-size="16" fill="#2B2B2B" text-anchor="start" font-weight="600">What the model is supposed to do, and had stopped doing</text>
+  <text x="92" y="58" font-size="12" fill="#6A6A6A" text-anchor="start">Arithmetic-average call, spot = strike = 4.50, 400,000 paths per point. Mean reversion toward a lower level should make the call</text>
+  <text x="92" y="75" font-size="12" fill="#6A6A6A" text-anchor="start">nearly worthless and toward a higher one make it valuable. It does: the price ranges over 0.456 across this sweep.</text>
+  <text x="92" y="94" font-size="12" fill="#2B2B2B" text-anchor="start">While the GBM-derived control variate was being applied to Schwartz, that entire response collapsed into the grey band.</text>
+</svg>
