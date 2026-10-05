@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Copper Options Monte Carlo</title>
+<meta name="description" content="**[Español](README.es.md)** | **English**">
+<style>
+  :root { --bg:#FBFAF8; --surface:#FFF; --ink:#23201D; --muted:#6B645D; --line:#E3DED7; --accent:#B5553D; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg:#171614; --surface:#201E1B; --ink:#EDE9E3; --muted:#A9A29A; --line:#322E2A; --accent:#D9765C; } }
+  :root[data-theme="dark"] { --bg:#171614; --surface:#201E1B; --ink:#EDE9E3; --muted:#A9A29A; --line:#322E2A; --accent:#D9765C; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.68 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:900px; margin:0 auto; padding:0 16px 88px; }
+  header { padding:60px 0 32px; border-bottom:1px solid var(--line); margin-bottom:36px; }
+  h1 { font-size:clamp(1.7rem,5vw,2.4rem); line-height:1.16; margin:0 0 18px; letter-spacing:-.02em; }
+  .lede { font-size:clamp(1rem,2.3vw,1.1rem); color:var(--muted); margin:0 0 22px; max-width:62ch; }
+  .lede strong { color:var(--ink); }
+  .links a { display:inline-block; margin:0 9px 9px 0; padding:9px 15px; border:1px solid var(--line);
+    border-radius:7px; text-decoration:none; color:var(--ink); background:var(--surface); font-size:.9rem;
+    transition:border-color .15s; }
+  .links a:hover { border-color:var(--accent); }
+  h2 { font-size:1.3rem; margin:48px 0 8px; padding-top:12px; border-top:1px solid var(--line); letter-spacing:-.01em; }
+  figure { margin:22px 0; }
+  figure img { width:100%; height:auto; display:block; border:1px solid var(--line); border-radius:9px; background:#fff; }
+  figcaption { font-size:.85rem; color:var(--muted); margin-top:9px; max-width:70ch; }
+  p { margin:0 0 16px; max-width:70ch; }
+  code { background:var(--surface); border:1px solid var(--line); border-radius:4px; padding:1px 5px; font-size:.86em;
+    font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+  footer { margin-top:60px; padding-top:22px; border-top:1px solid var(--line); font-size:.86rem; color:var(--muted); }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<h1>Copper Options Monte Carlo</h1>
+<p class="lede"><strong>[Español](README.es.md)</strong> | <strong>English</strong></p>
+<div class="links">
+<a href="https://github.com/Rxyxs/copper-options-montecarlo-cpp">Code and method</a>
+<a href="https://github.com/Rxyxs/copper-options-montecarlo-cpp#readme">Full README</a>
+</div></header>
+<p>This page shows the project's results. The methodology, the design decisions and the limitations are documented in the repository's README.</p>
+<h2>Variance reduction, measured as a controlled A/B</h2>
+<figure>
+<img src="figures/variance_reduction_ab.svg" alt="Standard error by configuration and model" loading="lazy">
+<figcaption>Each bar is compared against the plain-MC baseline <strong>of its own model</strong>, which</figcaption>
+</figure>
+<h2>The control variate was biasing every Schwartz price</h2>
+<figure>
+<img src="figures/schwartz_theta_response.svg" alt="Schwartz call price against the equilibrium level" loading="lazy">
+<figcaption>The red curve is the model doing its job, re-measured live by the figure</figcaption>
+</figure>
+<h2>A standard-error bug this measurement exposed</h2>
+<figure>
+<img src="figures/thread_scaling.svg" alt="Measured speedup against perfect linear scaling" loading="lazy">
+</figure>
+<h2>Tests</h2>
+<figure>
+<img src="figures/convergence_one_over_sqrt_n.svg" alt="Standard error against path count, log-log" loading="lazy">
+<figcaption>The convergence check as a picture: the measured errors sit on the theoretical</figcaption>
+</figure>
+<footer>
+Pablo Reyes · <a href="https://github.com/Rxyxs/copper-options-montecarlo-cpp">github.com/Rxyxs/copper-options-montecarlo-cpp</a> · MIT<br><br>
+Every figure on this page is produced by the repository's pipeline. For the full method and its limitations, see the README.
+</footer>
+</div></body></html>
