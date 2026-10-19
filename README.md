@@ -7,7 +7,7 @@
 [![Dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen.svg)](include/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**[Español](README.es.md)** | **English**
+[English ] | [[Español](README.es.md) ]
 
 A high-throughput Monte Carlo engine, written in native C++20, that prices
 arithmetic-average Asian options on copper under three price-dynamics

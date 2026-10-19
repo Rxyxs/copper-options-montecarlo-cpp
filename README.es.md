@@ -7,7 +7,7 @@
 [![Dependencias](https://img.shields.io/badge/dependencias-cero-brightgreen.svg)](include/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Español** | **[English](README.md)**
+[[English](README.md) ] | [Español ]
 
 Un motor de simulación Monte Carlo de alto rendimiento, escrito en C++20
 nativo, que valoriza opciones asiáticas (de promedio aritmético) sobre el
