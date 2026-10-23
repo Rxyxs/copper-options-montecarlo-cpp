@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Copper Options Monte Carlo</title>
-<meta name="description" content="**[Español](README.es.md)** | **English**">
+<meta name="description" content="[Español](README.es.md) | English">
 <style>
   :root { --bg:#FBFAF8; --surface:#FFF; --ink:#23201D; --muted:#6B645D; --line:#E3DED7; --accent:#B5553D; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
@@ -47,12 +47,12 @@
 <h2>Variance reduction, measured as a controlled A/B</h2>
 <figure>
 <img src="figures/variance_reduction_ab.svg" alt="Standard error by configuration and model" loading="lazy">
-<figcaption>Each bar is compared against the plain-MC baseline <strong>of its own model</strong>, which</figcaption>
+<figcaption>Each bar is compared against the plain-MC baseline <strong>of its own model</strong>, which is the comparison the earlier &quot;~46x&quot; claim got wrong by mixing two. It also shows the price of the fix plainly: the Schwartz default now gets antithetic sampling alone, worth 1.25x, where GBM gets 19.96x from both techniques.</figcaption>
 </figure>
 <h2>The control variate was biasing every Schwartz price</h2>
 <figure>
 <img src="figures/schwartz_theta_response.svg" alt="Schwartz call price against the equilibrium level" loading="lazy">
-<figcaption>The red curve is the model doing its job, re-measured live by the figure</figcaption>
+<figcaption>The red curve is the model doing its job, re-measured live by the figure generator rather than copied from this table. The dashed line is the GBM price, and the grey band is the 0.013 of room the price had while the bug was live — a model that answered the same thing whatever you told it about copper&#x27;s equilibrium level.</figcaption>
 </figure>
 <h2>A standard-error bug this measurement exposed</h2>
 <figure>
@@ -61,7 +61,7 @@
 <h2>Tests</h2>
 <figure>
 <img src="figures/convergence_one_over_sqrt_n.svg" alt="Standard error against path count, log-log" loading="lazy">
-<figcaption>The convergence check as a picture: the measured errors sit on the theoretical</figcaption>
+<figcaption>The convergence check as a picture: the measured errors sit on the theoretical -1/2 slope, and buying a 5.7x tighter interval by brute force costs 32x the paths. That ratio is the whole economic argument for variance reduction, and the reason losing the control variate on Schwartz is a real cost rather than a footnote.</figcaption>
 </figure>
 <footer>
 Pablo Reyes · <a href="https://github.com/Rxyxs/copper-options-montecarlo-cpp">github.com/Rxyxs/copper-options-montecarlo-cpp</a> · MIT<br><br>
