@@ -52,6 +52,7 @@ Two design goals follow directly from that use case:
 | Control-variate bias found and fixed | Schwartz price corrected 0.2997 → **0.1663** | The GBM-derived anchor was being applied to a mean-reverting model, flattening its response to the equilibrium level from 0.312 to 0.013 ([write-up](#the-control-variate-was-biasing-every-schwartz-price)) |
 | Self-test vs. closed-form price (GBM) | diff 0.000712, within 4×stderr tolerance | Pass/fail correctness gate on every run, not a one-time manual check |
 | Heston put-call parity self-test | diff 0.000140, within 4×stderr tolerance | Validates the stochastic-vol model even though it has no closed-form Asian price |
+| Models on real LME copper, 332 walk-forward origins | GBM 86.4%, Heston 87.0%, Schwartz 82.8% inside a 90% band | Heston gains 1.1%, the same as no model; estimated mean reversion is indistinguishable from a random walk ([backtest](#backtest-on-the-real-lme-price)) |
 | Sustained throughput | ~1.2-1.4M paths/sec | Flat across path counts — the expected signature of a genuinely embarrassingly-parallel workload |
 
 ## Architecture
@@ -156,7 +157,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1 -Figures # redraws the READ
 .\bin\copper_mc.exe --help
 ```
 
-All market/option parameters are illustrative example values (documented in
+The CLI defaults are illustrative; the [backtest](#backtest-on-the-real-lme-price) estimates them from real prices. All market/option parameters are illustrative example values (documented in
 `--help`), not a live quote feed.
 
 `--output-csv FILE` appends the run's parameters and result (price, std.
@@ -380,6 +381,109 @@ warm-up or batching effect to exploit at larger N, since each work item's
 cost (path simulation + RNG seeding) is the same regardless of how many
 other paths run alongside it.
 
+## Backtest on the real LME price
+
+Everything above checks that the engine computes correctly. It says nothing about
+whether its models describe copper, so this section tests that: 30 years of daily
+LME cash prices from [Cochilco](https://boletin.cochilco.cl/estadisticas/grafico.asp)
+(7,789 days, 1996-01-02 to 2026-11-04, no duplicates or gaps).
+
+Every 21 trading days each model is re-estimated on the previous three years only,
+then predicts the distribution of the average of the next 63 fixings, a three-month
+quotational period. That gives 332 origins from 1998 to 2026, scored with CRPS, a
+proper score for a whole distribution, and with band coverage.
+
+| Model | CRPS (bps of spot) | vs. GBM, 95% interval | Inside 90% band | Below / above band (nominal 5% each) |
+|---|---|---|---|---|
+| GBM, 3-year vol | 416.3 | reference | 86.4% | 4.8% / 8.7% |
+| GBM, EWMA vol | 416.1 | -0.3 [-5.0, +4.5] | 85.8% | 6.6% / 7.5% |
+| Heston, moment-matched | 411.8 | -4.6 [-9.9, -0.2] | 87.0% | 4.8% / 8.1% |
+| Block bootstrap, no model | 411.7 | -4.7 [-9.7, -0.3] | 85.8% | 5.1% / 9.0% |
+| Schwartz | 433.1 | +16.8 [-4.9, +40.5] | 82.8% | 7.2% / 9.9% |
+
+![Three-month average against the 90% band](docs/figures/backtest_band.svg)
+
+**1. Every band is too narrow, and on the same side.** They cover 83-87% rather than
+90%, and most misses are upside: rallies such as 2003-2008 and the 2020 rebound. The
+interval for GBM is [81.0%, 91.3%], so 90% is not rejected for it. It is rejected
+for GBM with EWMA, at [81.6%, 89.8%], and for Schwartz, at [76.2%, 88.9%].
+
+![Coverage of the 90% band by model](docs/figures/backtest_coverage.svg)
+
+**2. Stochastic volatility barely pays here.** Heston improves CRPS by 1.1%, the same
+as resampling past returns with no model at all. Its edge also depends on the window:
+with two years the interval is [-9.8, +0.8], with five [-13.3, -0.5]. Over a
+three-month average, three extra parameters do not buy much.
+
+**3. Mean reversion cannot be told apart from noise on this window.** The median
+estimated speed is 1.11, close to the 1.2 this engine uses as a default, and it looks
+like a half-life of seven months. A random walk produces the same number. The estimated
+gap to equilibrium also fails to predict: the slope of the realized move on the gap is
+0.02 [-0.03, 0.08] where the median fit implies 0.13.
+
+![Estimated kappa on synthetic series and on copper](docs/figures/backtest_kappa.svg)
+
+This does **not** prove copper has no reversion: three years is short against a cycle
+measured in decades. What it shows is that a Schwartz model estimated this way should
+not be trusted over a random walk, whatever its theoretical appeal.
+
+### The scorer was tested before believing it
+
+`tools/validate_backtest.py` runs the same backtest on synthetic series with a known
+truth, 10 seeds each:
+
+| True process | Median kappa estimated | GBM coverage | Schwartz CRPS minus GBM | Schwartz beats GBM |
+|---|---|---|---|---|
+| Random walk | 1.47 (0.71 to 1.94) | 89.8% | +34.2 bps | 0 of 10 |
+| Schwartz, kappa = 1 | 2.43 (1.80 to 2.83) | 90.9% | +8.9 bps | 4 of 10 |
+| Schwartz, kappa = 3 | 4.24 (3.74 to 4.88) | 93.6% | -29.4 bps | 10 of 10 |
+
+GBM reaches 90% when its assumptions hold, so the shortfall on real copper is a real
+finding and not an artifact of the scorer. Schwartz wins clearly when reversion is
+strong, so the scorer is not rigged against it. And at kappa = 1 it still loses more
+often than not: the estimate is too noisy to use even when the effect exists.
+
+### What it means for a hedge today
+
+Fitted on the last window (spot 6.4415 USD/lb, 2026-11-04), three-month at-the-money
+Asian options, in USD/lb:
+
+| Model | Put | Call | Average, 90% band |
+|---|---|---|---|
+| GBM, 3-year vol | 0.146 | 0.145 | 5.86 to 7.06 |
+| GBM, EWMA vol | 0.112 | 0.113 | 5.99 to 6.92 |
+| Heston | 0.130 | 0.132 | 5.92 to 7.00 |
+| Block bootstrap | 0.128 | 0.148 | 5.89 to 7.03 |
+| Schwartz | 0.187 | 0.098 | 5.80 to 6.93 |
+
+The volatility estimate moves the put by 30%. Schwartz makes it 28% dearer than GBM and
+the call 32% cheaper, on an equilibrium the backtest gives no reason to trust.
+
+### Limits
+
+- **These are not market prices.** No LME option quotes are public, so r and q stay at
+  zero and the test is on the distribution under the observed measure. It cannot say
+  whether a desk's quote is fair. Over the sample the average call paid 3.6% of spot
+  against a modeled 2.7%, but that mostly records a price that went from 0.6 to 6.4
+  USD/lb, not an edge available in advance.
+- **Cash price, not a forward curve.** Real quotational periods settle against forwards.
+- **Heston is moment-matched** from returns, not calibrated to an implied surface, and
+  its vol-of-vol is an upper bound.
+- **No volatility jumps or regimes**, which is where the missed rallies come from.
+
+Reproduce:
+
+```powershell
+python tools\fetch_lme.py
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -Backtest
+.\bin\backtest_lme.exe data\lme_copper_daily.csv --window 756 --outdir results
+python tools\validate_backtest.py --seeds 10
+python tools\backtest_figures.py
+```
+
+The series is downloaded rather than versioned. Scores for each origin are in
+[`results/`](results/).
+
 ## Project layout
 
 ```
@@ -390,6 +494,7 @@ copper-options-montecarlo-cpp/
 │   ├── PathSimulator.h     # exact-transition (GBM/Schwartz) + Heston CIR paths
 │   ├── AsianOption.h       # option spec, averaging, payoff
 │   ├── ClosedFormAsian.h   # Kemna-Vorst closed form
+│   ├── Calibration.h       # estimators and scores for the backtest
 │   ├── MonteCarloEngine.h  # std::execution::par_unseq pricer
 │   └── Timer.h
 ├── src/
@@ -400,6 +505,10 @@ copper-options-montecarlo-cpp/
 │   └── test_engine_properties.cpp  # 12 cases: reproducibility, variance reduction, convergence,
 │                                   #   control-variate bias across all models, Schwartz theta response
 ├── tools/
+│   ├── backtest_lme.cpp            # walk-forward backtest on the real LME price
+│   ├── fetch_lme.py                # downloads the Cochilco series
+│   ├── validate_backtest.py        # same backtest on series with a known truth
+│   ├── backtest_figures.py         # backtest figures as SVG, standard library only
 │   └── make_figures.cpp            # README figures, emitted as hand-written SVG (no plotting library)
 └── docs/figures/                   # the generated SVGs embedded above
 ├── CMakeLists.txt

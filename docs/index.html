@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Copper Options Monte Carlo</title>
-<meta name="description" content="[Español](README.es.md) | English">
+<meta name="description" content="C++20 Monte Carlo pricer for copper Asian options, backtested on 30 years of real LME prices.">
 <style>
   :root { --bg:#FBFAF8; --surface:#FFF; --ink:#23201D; --muted:#6B645D; --line:#E3DED7; --accent:#B5553D; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
@@ -38,12 +38,26 @@
 <div class="wrap">
 <header>
 <h1>Copper Options Monte Carlo</h1>
-<p class="lede"><strong>[Español](README.es.md)</strong> | <strong>English</strong></p>
+<p class="lede">A C++20 pricer for copper Asian options under GBM, Schwartz and Heston, then tested on 30 years of real LME prices. Stochastic volatility barely helps, and the mean reversion a three-year window finds is what a random walk also produces.</p>
 <div class="links">
 <a href="https://github.com/Rxyxs/copper-options-montecarlo-cpp">Code and method</a>
 <a href="https://github.com/Rxyxs/copper-options-montecarlo-cpp#readme">Full README</a>
 </div></header>
 <p>This page shows the project's results. The methodology, the design decisions and the limitations are documented in the repository's README.</p>
+<h2>Backtest on the real LME price</h2>
+<p>Every 21 trading days from 1998 to 2026, each model is re-estimated on the previous three years only and predicts the average of the next 63 fixings. There are no public LME option quotes, so this tests the distribution the models assign to the average, not whether they match market prices.</p>
+<figure>
+<img src="figures/backtest_band.svg" alt="Realized three-month average against the 90 percent band" loading="lazy">
+<figcaption>Red points fall outside the band given beforehand. Most misses are rallies, such as 2003-2008 and the 2020 rebound.</figcaption>
+</figure>
+<figure>
+<img src="figures/backtest_coverage.svg" alt="Coverage of the 90 percent band by model" loading="lazy">
+<figcaption>All models run narrow. Heston covers 87.0% and improves CRPS by 1.1%, the same as resampling past returns with no model. Schwartz is the lowest, and its interval excludes 90%.</figcaption>
+</figure>
+<figure>
+<img src="figures/backtest_kappa.svg" alt="Estimated mean reversion speed on synthetic series and on copper" loading="lazy">
+<figcaption>Copper's median of 1.11 sits inside the range a random walk gives. This does not prove copper has no reversion, only that a three-year window cannot detect it. The same backtest picks Schwartz in 10 of 10 series when the true speed is 3, so the scorer is not rigged against it.</figcaption>
+</figure>
 <h2>Variance reduction, measured as a controlled A/B</h2>
 <figure>
 <img src="figures/variance_reduction_ab.svg" alt="Standard error by configuration and model" loading="lazy">
