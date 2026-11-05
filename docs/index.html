@@ -32,6 +32,10 @@
     font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
   footer { margin-top:60px; padding-top:22px; border-top:1px solid var(--line); font-size:.86rem; color:var(--muted); }
   a { color:var(--accent); }
+  .chart { width:100%; min-height:380px; border:1px solid var(--line); border-radius:9px; background:var(--surface); }
+  .ctl { display:inline-block; margin:0 0 8px; font-size:.9rem; color:var(--muted); }
+  .ctl select { margin-left:6px; padding:6px 8px; font:inherit; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:6px; }
+  .note { font-size:.88rem; color:var(--muted); margin:0 0 8px; }
 </style>
 </head>
 <body>
@@ -47,18 +51,23 @@
 <h2>Backtest on the real LME price</h2>
 <p>Every 21 trading days from 1998 to 2026, each model is re-estimated on the previous three years only and predicts the average of the next 63 fixings. There are no public LME option quotes, so this tests the distribution the models assign to the average, not whether they match market prices.</p>
 <figure>
-<img src="figures/backtest_band.svg" alt="Realized three-month average against the 90 percent band" loading="lazy">
-<figcaption>Red points fall outside the band given beforehand. Most misses are rallies, such as 2003-2008 and the 2020 rebound.</figcaption>
+<label class="ctl">Model <select id="bt-model"></select></label><p class="note" id="bt-band-note"></p><div id="bt-band" class="chart"></div><noscript><img src="figures/backtest_band.svg" alt="" style="width:100%"></noscript>
+<figcaption>Average of the next 63 fixings against spot. Red points fall outside the band given beforehand. Most misses are rallies, such as 2003-2008 and the 2020 rebound.</figcaption>
 </figure>
 <figure>
-<img src="figures/backtest_coverage.svg" alt="Coverage of the 90 percent band by model" loading="lazy">
+<label class="ctl">Show <select id="bt-metric"><option value="cover">Band coverage</option><option value="crps">CRPS against GBM</option></select></label><div id="bt-score" class="chart"></div><noscript><img src="figures/backtest_coverage.svg" alt="" style="width:100%"></noscript>
 <figcaption>All models run narrow. Heston covers 87.0% and improves CRPS by 1.1%, the same as resampling past returns with no model. Schwartz is the lowest, and its interval excludes 90%.</figcaption>
 </figure>
 <figure>
-<img src="figures/backtest_kappa.svg" alt="Estimated mean reversion speed on synthetic series and on copper" loading="lazy">
+<div id="bt-kappa" class="chart"></div><noscript><img src="figures/backtest_kappa.svg" alt="" style="width:100%"></noscript>
 <figcaption>Copper's median of 1.11 sits inside the range a random walk gives. This does not prove copper has no reversion, only that a three-year window cannot detect it. The same backtest picks Schwartz in 10 of 10 series when the true speed is 3, so the scorer is not rigged against it.</figcaption>
 </figure>
 <p>Jumps and regimes do not close the gap either. Merton gains 0.6 bps and two volatility regimes 3.3, against 13.4 for the same regime model on series with true regimes. Keeping the estimated drift makes the distribution worse by 16.4 bps. No model reaches 90% or improves CRPS by more than about 1%.</p>
+<h2>What each model charges today</h2>
+<figure><div id="bt-today" class="chart"></div>
+<figcaption>Three-month at-the-money Asian options from the last window. Model values with zero rates, not market quotes.</figcaption></figure>
+<h2>Architecture</h2>
+<figure><img src="figures/architecture_en.svg" alt="Input, parallel pricing engine, tests and real-data backtest" loading="lazy"></figure>
 <h2>Variance reduction, measured as a controlled A/B</h2>
 <figure>
 <img src="figures/variance_reduction_ab.svg" alt="Standard error by configuration and model" loading="lazy">
@@ -82,4 +91,7 @@
 Pablo Reyes · <a href="https://github.com/Rxyxs/copper-options-montecarlo-cpp">github.com/Rxyxs/copper-options-montecarlo-cpp</a> · MIT<br><br>
 Every figure on this page is produced by the repository's pipeline. For the full method and its limitations, see the README.
 </footer>
-</div></body></html>
+</div><script src="https://cdn.jsdelivr.net/npm/plotly.js-basic-dist-min@2.35.2/plotly-basic.min.js"></script>
+<script src="backtest_data.js"></script>
+<script src="backtest_charts.js"></script>
+</body></html>

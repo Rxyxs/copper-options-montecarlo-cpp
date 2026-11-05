@@ -61,21 +61,7 @@ De ese caso de uso se derivan directamente dos objetivos de diseño:
 
 ## Arquitectura
 
-```mermaid
-flowchart TD
-    CLI["main.cpp — argumentos CLI"] --> MP["MarketParams (GBM, Schwartz, o Heston)"]
-    CLI --> SPEC["AsianOptionSpec (strike, madurez, fixings)"]
-    MP --> ENGINE
-    SPEC --> ENGINE["MonteCarloEngine::price\nstd::transform_reduce(std::execution::par_unseq, ...)"]
-    ENGINE -->|"item de trabajo i (0..numPaths/2)"| W1["simulatePair(i)\nseed = splitmix64(baseSeed, i)"]
-    W1 --> RNG1["FastGaussianRNG\n(Marsaglia polar)"]
-    RNG1 --> PATH1["PathSimulator (GBM/Schwartz: transicion exacta)\no Heston CIR (Euler full-truncation)"]
-    PATH1 --> PAY1["Payoff opcion asiatica\n(aritmetico + geometrico)"]
-    PAY1 -->|"variable de control (solo GBM/Schwartz)"| CF["ClosedFormAsian\n(Kemna-Vorst)"]
-    PAY1 --> AGG["transform_reduce: suma, sumaCuad, cuenta\n-> media, error estandar, IC 95%"]
-    CF --> AGG
-    AGG --> RESULT["SimulationResult"]
-```
+![Arquitectura: entrada, motor paralelo, tests y backtest con datos reales](docs/figures/architecture_es.svg)
 
 Cada item de trabajo paralelo (un par antitético, o una trayectoria suelta)
 deriva su propia semilla de RNG vía `splitmix64(baseSeed, workIndex)` y
@@ -445,6 +431,8 @@ distancia es 0,02 [-0,03, 0,08], cuando el ajuste mediano implica 0,13.
 Esto **no** demuestra que el cobre no revierta: tres años es poco frente a un ciclo que
 se mide en décadas. Lo que muestra es que un Schwartz estimado así no merece más
 confianza que un paseo aleatorio, por atractivo que sea en teoría.
+
+[Explora estos resultados de forma interactiva](https://rxyxs.github.io/copper-options-montecarlo-cpp/) (página en inglés): cualquier modelo, zoom y valores exactos al pasar el cursor.
 
 ### El evaluador se probó antes de creerle
 
