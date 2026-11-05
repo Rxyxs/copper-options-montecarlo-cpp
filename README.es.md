@@ -56,6 +56,7 @@ De ese caso de uso se derivan directamente dos objetivos de diseño:
 | Sesgo de la variable de control, encontrado y corregido | Precio Schwartz corregido 0,2997 → **0,1663** | El ancla derivada de GBM se estaba aplicando a un modelo con reversión a la media, aplanando su respuesta al nivel de equilibrio de 0,312 a 0,013 ([análisis](#la-variable-de-control-estaba-sesgando-todos-los-precios-schwartz)) |
 | Self-test vs. precio de forma cerrada (GBM) | diferencia 0,000712, dentro de tolerancia 4×error estándar | Verificación pass/fail de correctitud en cada ejecución, no un chequeo manual único |
 | Self-test de paridad put-call de Heston | diferencia 0,000140, dentro de tolerancia 4×error estándar | Valida el modelo de volatilidad estocástica aunque no tenga precio asiático de forma cerrada |
+| Modelos sobre cobre LME real, 332 orígenes walk-forward | GBM 86,4%, Heston 87,0%, Schwartz 82,8% dentro de una banda del 90% | Heston gana 1,1%, lo mismo que sin modelo; la reversión estimada no se distingue de un paseo aleatorio ([backtest](#backtest-sobre-el-precio-real-del-lme)) |
 | Throughput sostenido | ~1,2-1,4M paths/seg | Plano a través de distintos números de trayectorias -- la firma esperada de una carga genuinamente paralela sin dependencias |
 
 ## Arquitectura
@@ -166,7 +167,7 @@ con `/O2 /std:c++20 /EHsc /W4`, generando `bin\copper_mc.exe`.
 .\bin\copper_mc.exe --help
 ```
 
-Todos los parámetros de mercado/opción son valores de ejemplo ilustrativos
+Los valores por omisión del CLI son ilustrativos; el [backtest](#backtest-sobre-el-precio-real-del-lme) los estima con precios reales. Todos los parámetros de mercado/opción son valores de ejemplo ilustrativos
 (documentados en `--help`), no un feed de cotizaciones en vivo.
 
 `--output-csv FILE` agrega los parámetros y el resultado de la corrida
@@ -399,6 +400,110 @@ calentamiento ni de batching que explotar a N mayor, ya que el costo de
 cada item de trabajo (simulación de trayectoria + semilla del RNG) es el
 mismo sin importar cuántas otras trayectorias corran en paralelo.
 
+## Backtest sobre el precio real del LME
+
+Todo lo anterior comprueba que el motor calcula bien. No dice si sus modelos describen
+al cobre, y eso es lo que prueba esta sección: 30 años de precios diarios contado del
+LME publicados por [Cochilco](https://boletin.cochilco.cl/estadisticas/grafico.asp)
+(7.789 días, del 2 de enero de 1996 al 4 de noviembre de 2026, sin duplicados ni huecos).
+
+Cada 21 días de transacción cada modelo se reestima solo con los tres años anteriores y
+predice la distribución del promedio de las siguientes 63 fijaciones, un período de
+cotización de tres meses. Son 332 orígenes entre 1998 y 2026, evaluados con CRPS, una
+regla de puntaje propia para una distribución completa, y con la cobertura de las bandas.
+
+| Modelo | CRPS (pb del spot) | vs. GBM, intervalo 95% | Dentro de la banda 90% | Bajo / sobre la banda (nominal 5% cada lado) |
+|---|---|---|---|---|
+| GBM, vol. de 3 años | 416,3 | referencia | 86,4% | 4,8% / 8,7% |
+| GBM, vol. EWMA | 416,1 | -0,3 [-5,0, +4,5] | 85,8% | 6,6% / 7,5% |
+| Heston, por momentos | 411,8 | -4,6 [-9,9, -0,2] | 87,0% | 4,8% / 8,1% |
+| Bootstrap por bloques, sin modelo | 411,7 | -4,7 [-9,7, -0,3] | 85,8% | 5,1% / 9,0% |
+| Schwartz | 433,1 | +16,8 [-4,9, +40,5] | 82,8% | 7,2% / 9,9% |
+
+![Promedio a tres meses contra la banda del 90%](docs/figures/backtest_band.svg)
+
+**1. Todas las bandas quedan angostas, y por el mismo lado.** Cubren 83-87% en vez de
+90%, y la mayoría de los fallos son al alza: rallies como 2003-2008 y el rebote de 2020.
+El intervalo de GBM es [81,0%, 91,3%], así que no se rechaza el 90%; los de GBM con EWMA,
+[81,6%, 89,8%], y Schwartz, [76,2%, 88,9%], sí lo rechazan.
+
+![Cobertura de la banda del 90% por modelo](docs/figures/backtest_coverage.svg)
+
+**2. La volatilidad estocástica casi no paga aquí.** Heston mejora el CRPS en 1,1%, lo
+mismo que remuestrear retornos pasados sin modelo alguno. Su ventaja además depende de
+la ventana: con dos años el intervalo es [-9,8, +0,8] y con cinco [-13,3, -0,5]. Sobre
+un promedio a tres meses, tres parámetros más no compran mucho.
+
+**3. Con esta ventana, la reversión a la media no se distingue del ruido.** La velocidad
+mediana estimada es 1,11, cerca del 1,2 que este motor usa por omisión, y parece una
+vida media de siete meses. Un paseo aleatorio entrega el mismo número. La distancia
+estimada al equilibrio tampoco predice: la pendiente del movimiento realizado sobre esa
+distancia es 0,02 [-0,03, 0,08], cuando el ajuste mediano implica 0,13.
+
+![Kappa estimado en series sintéticas y en el cobre](docs/figures/backtest_kappa.svg)
+
+Esto **no** demuestra que el cobre no revierta: tres años es poco frente a un ciclo que
+se mide en décadas. Lo que muestra es que un Schwartz estimado así no merece más
+confianza que un paseo aleatorio, por atractivo que sea en teoría.
+
+### El evaluador se probó antes de creerle
+
+`tools/validate_backtest.py` corre el mismo backtest sobre series sintéticas con verdad
+conocida, 10 semillas por caso:
+
+| Proceso verdadero | Kappa mediano estimado | Cobertura GBM | CRPS de Schwartz menos GBM | Schwartz le gana a GBM |
+|---|---|---|---|---|
+| Paseo aleatorio | 1,47 (0,71 a 1,94) | 89,8% | +34,2 pb | 0 de 10 |
+| Schwartz, kappa = 1 | 2,43 (1,80 a 2,83) | 90,9% | +8,9 pb | 4 de 10 |
+| Schwartz, kappa = 3 | 4,24 (3,74 a 4,88) | 93,6% | -29,4 pb | 10 de 10 |
+
+GBM llega al 90% cuando sus supuestos se cumplen, así que lo que le falta en el cobre real
+es un hallazgo y no un artefacto del evaluador. Schwartz gana con claridad cuando la
+reversión es fuerte, así que el evaluador no juega en su contra. Y con kappa = 1 igual
+pierde más veces de las que gana: la estimación es demasiado ruidosa aunque el efecto exista.
+
+### Qué significa para una cobertura hoy
+
+Ajustando con la última ventana (spot 6,4415 USD/lb, 4 de noviembre de 2026), opciones
+asiáticas a tres meses en el dinero, en USD/lb:
+
+| Modelo | Put | Call | Promedio, banda 90% |
+|---|---|---|---|
+| GBM, vol. de 3 años | 0,146 | 0,145 | 5,86 a 7,06 |
+| GBM, vol. EWMA | 0,112 | 0,113 | 5,99 a 6,92 |
+| Heston | 0,130 | 0,132 | 5,92 a 7,00 |
+| Bootstrap por bloques | 0,128 | 0,148 | 5,89 a 7,03 |
+| Schwartz | 0,187 | 0,098 | 5,80 a 6,93 |
+
+La estimación de volatilidad mueve el put en 30%. Schwartz lo encarece 28% respecto de
+GBM y abarata el call 32%, apoyado en un equilibrio en el que el backtest no da motivos
+para confiar.
+
+### Límites
+
+- **No son precios de mercado.** No hay cotizaciones públicas de opciones del LME, así que
+  r y q quedan en cero y la prueba es sobre la distribución bajo la medida observada. No
+  puede decir si la cotización de una mesa es justa. En la muestra, el call promedio pagó
+  3,6% del spot contra 2,7% modelado, pero eso refleja sobre todo un precio que pasó de
+  0,6 a 6,4 USD/lb, no una ventaja disponible de antemano.
+- **Precio contado, no curva forward.** Los períodos de cotización reales liquidan contra forwards.
+- **Heston se ajusta por momentos** desde retornos, no calibrado a una superficie implícita,
+  y su vol-of-vol es una cota superior.
+- **Sin saltos ni regímenes de volatilidad**, que es de donde vienen los rallies no capturados.
+
+Para reproducir:
+
+```powershell
+python tools\fetch_lme.py
+powershell -ExecutionPolicy Bypass -File .\build.ps1 -Backtest
+.\bin\backtest_lme.exe data\lme_copper_daily.csv --window 756 --outdir results
+python tools\validate_backtest.py --seeds 10
+python tools\backtest_figures.py
+```
+
+La serie se descarga y no se versiona. Los puntajes de cada origen están en
+[`results/`](results/).
+
 ## Estructura del proyecto
 
 ```
@@ -409,6 +514,7 @@ copper-options-montecarlo-cpp/
 │   ├── PathSimulator.h     # transicion exacta (GBM/Schwartz) + Heston CIR
 │   ├── AsianOption.h       # especificacion de la opcion, promedio, payoff
 │   ├── ClosedFormAsian.h   # formula cerrada de Kemna-Vorst
+│   ├── Calibration.h       # estimadores y puntajes del backtest
 │   ├── MonteCarloEngine.h  # pricer con std::execution::par_unseq
 │   └── Timer.h
 ├── src/
@@ -419,6 +525,10 @@ copper-options-montecarlo-cpp/
 │   └── test_engine_properties.cpp  # 12 casos: reproducibilidad, reduccion de varianza, convergencia,
 │                                   #   sesgo de la variable de control en todos los modelos, respuesta a theta
 ├── tools/
+│   ├── backtest_lme.cpp            # backtest walk-forward sobre el precio real del LME
+│   ├── fetch_lme.py                # baja la serie de Cochilco
+│   ├── validate_backtest.py        # el mismo backtest sobre series con verdad conocida
+│   ├── backtest_figures.py         # figuras del backtest en SVG, solo biblioteca estándar
 │   └── make_figures.cpp            # Figuras del README, emitidas como SVG escrito a mano (sin libreria de graficos)
 └── docs/figures/                   # Los SVG generados, incrustados mas arriba
 ├── CMakeLists.txt

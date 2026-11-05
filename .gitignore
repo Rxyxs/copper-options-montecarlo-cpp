@@ -33,3 +33,6 @@ Thumbs.db
 results.csv
 *.results.csv
 
+
+# Series downloaded by tools/fetch_lme.py, not versioned
+data/

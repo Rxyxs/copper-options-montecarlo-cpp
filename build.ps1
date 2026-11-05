@@ -68,8 +68,19 @@ if ($args -contains "-Figures") {
     if ($LASTEXITCODE -ne 0) { throw "Figure generation failed" }
 }
 
+# -Backtest compila el backtest walk-forward sobre el precio real del LME. Los
+# datos los baja tools/fetch_lme.py y no se versionan.
+if ($args -contains "-Backtest") {
+    Write-Host "Building backtest_lme..."
+    $btCmd = "call `"$vcvars`" >nul && cl.exe /std:c++20 /EHsc /W4 /nologo $optFlags " +
+             "/I `"$root\include`" `"$root\tools\backtest_lme.cpp`" " +
+             "/Fe:`"$binDir\backtest_lme.exe`" /Fo:`"$binDir\bt_`""
+    cmd.exe /c $btCmd
+    if ($LASTEXITCODE -ne 0) { throw "Build failed for backtest_lme (exit code $LASTEXITCODE)" }
+}
+
 if ($withTests) {
-    foreach ($suite in @("test_pricing_math", "test_engine_properties")) {
+    foreach ($suite in @("test_pricing_math", "test_engine_properties", "test_calibration")) {
         Write-Host "Building $suite..."
         $testCmd = "call `"$vcvars`" >nul && cl.exe /std:c++20 /EHsc /W4 /nologo $optFlags " +
                    "/I `"$root\include`" /I `"$root\tests`" `"$root\tests\$suite.cpp`" " +
@@ -79,7 +90,7 @@ if ($withTests) {
     }
 
     $failed = 0
-    foreach ($suite in @("test_pricing_math", "test_engine_properties")) {
+    foreach ($suite in @("test_pricing_math", "test_engine_properties", "test_calibration")) {
         Write-Host ""
         & "$binDir\$suite.exe"
         if ($LASTEXITCODE -ne 0) { $failed = 1 }

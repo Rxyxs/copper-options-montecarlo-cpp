@@ -43,7 +43,7 @@ enable_testing()
 # statistical properties (reproducibility, variance reduction, 1/sqrt(N) decay).
 add_test(NAME self_test COMMAND copper_mc --self-test)
 
-foreach(test_name test_pricing_math test_engine_properties)
+foreach(test_name test_pricing_math test_engine_properties test_calibration)
     add_executable(${test_name} tests/${test_name}.cpp)
     target_include_directories(${test_name} PRIVATE include tests)
     if(MSVC)
@@ -65,3 +65,17 @@ endforeach()
 set_tests_properties(self_test PROPERTIES TIMEOUT 600)
 set_tests_properties(test_pricing_math PROPERTIES TIMEOUT 60)
 set_tests_properties(test_engine_properties PROPERTIES TIMEOUT 600)
+set_tests_properties(test_calibration PROPERTIES TIMEOUT 120)
+
+# Walk-forward backtest on the real LME price (see the README). Built here so CI
+# catches it breaking; running it needs the series from tools/fetch_lme.py.
+add_executable(backtest_lme tools/backtest_lme.cpp)
+target_include_directories(backtest_lme PRIVATE include)
+if(MSVC)
+    target_compile_options(backtest_lme PRIVATE /W4 /EHsc /O2)
+else()
+    target_compile_options(backtest_lme PRIVATE -Wall -Wextra -O3)
+    if(TBB_FOUND)
+        target_link_libraries(backtest_lme PRIVATE TBB::tbb)
+    endif()
+endif()
