@@ -58,6 +58,7 @@
 <img src="figures/backtest_kappa.svg" alt="Estimated mean reversion speed on synthetic series and on copper" loading="lazy">
 <figcaption>Copper's median of 1.11 sits inside the range a random walk gives. This does not prove copper has no reversion, only that a three-year window cannot detect it. The same backtest picks Schwartz in 10 of 10 series when the true speed is 3, so the scorer is not rigged against it.</figcaption>
 </figure>
+<p>Jumps and regimes do not close the gap either. Merton gains 0.6 bps and two volatility regimes 3.3, against 13.4 for the same regime model on series with true regimes. Keeping the estimated drift makes the distribution worse by 16.4 bps. No model reaches 90% or improves CRPS by more than about 1%.</p>
 <h2>Variance reduction, measured as a controlled A/B</h2>
 <figure>
 <img src="figures/variance_reduction_ab.svg" alt="Standard error by configuration and model" loading="lazy">
