@@ -146,4 +146,32 @@ TEST(estimators_only_see_the_window_they_are_given) {
     CHECK_NEAR(a.sigma, b.sigma, 0.0);
 }
 
+TEST(fit_merton_finds_planted_jumps_and_few_on_a_normal_series) {
+    FastGaussianRNG rng(21);
+    std::vector<double> r(50000);
+    for (size_t i = 0; i < r.size(); ++i) r[i] = 0.01 * rng.next() + (i % 100 == 0 ? 0.08 : 0.0);
+    const MertonFit m = fitMerton(r);
+    CHECK_BETWEEN(m.lambda, 0.009, 0.015);
+    CHECK_BETWEEN(m.muJ, 0.05, 0.09);
+    CHECK_NEAR(std::sqrt(m.dailyVar), 0.01, 0.001);
+    std::vector<double> calm(50000);
+    for (double& x : calm) x = 0.01 * rng.next();
+    CHECK(fitMerton(calm).lambda < 0.006);
+}
+
+TEST(fit_regimes_recovers_two_volatility_states) {
+    FastGaussianRNG rng(22);
+    std::vector<double> r;
+    for (int block = 0; block < 40; ++block)
+        for (int d = 0; d < 100; ++d) r.push_back((block % 2 ? 0.03 : 0.008) * rng.next());
+    const RegimeFit f = fitRegimes(r);
+    CHECK_NEAR(std::sqrt(f.var[0]), 0.008, 0.001);
+    CHECK_NEAR(std::sqrt(f.var[1]), 0.03, 0.002);
+    CHECK_BETWEEN(f.stay[0], 0.97, 0.999);
+    CHECK_BETWEEN(f.stay[1], 0.97, 0.999);
+    CHECK(f.probHighNow > 0.8);  // the last block is the volatile one
+    const std::vector<double> endsCalm(r.begin(), r.end() - 100);
+    CHECK(fitRegimes(endsCalm).probHighNow < 0.1);
+}
+
 int main() { return testing::runAllTests("calibration"); }

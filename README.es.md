@@ -405,7 +405,7 @@ mismo sin importar cuántas otras trayectorias corran en paralelo.
 Todo lo anterior comprueba que el motor calcula bien. No dice si sus modelos describen
 al cobre, y eso es lo que prueba esta sección: 30 años de precios diarios contado del
 LME publicados por [Cochilco](https://boletin.cochilco.cl/estadisticas/grafico.asp)
-(7.789 días, del 2 de enero de 1996 al 4 de noviembre de 2026, sin duplicados ni huecos).
+(7.790 días, del 2 de enero de 1996 al 5 de noviembre de 2026, sin duplicados ni huecos).
 
 Cada 21 días de transacción cada modelo se reestima solo con los tres años anteriores y
 predice la distribución del promedio de las siguientes 63 fijaciones, un período de
@@ -462,22 +462,53 @@ es un hallazgo y no un artefacto del evaluador. Schwartz gana con claridad cuand
 reversión es fuerte, así que el evaluador no juega en su contra. Y con kappa = 1 igual
 pierde más veces de las que gana: la estimación es demasiado ruidosa aunque el efecto exista.
 
+### ¿Los saltos o los regímenes arreglan los rallies no capturados?
+
+No. Corrí tres modelos más sobre los mismos orígenes: difusión con saltos de Merton, un
+modelo oculto de Markov de dos estados donde solo cambia la volatilidad, y el mismo
+conservando la tendencia estimada de cada régimen.
+
+| Modelo | CRPS vs. GBM, intervalo 95% | Dentro de la banda 90% | Sobre la banda |
+|---|---|---|---|
+| Saltos de Merton | -0,6 [-1,3, +0,1] | 87,0% | 8,1% |
+| Dos regímenes de volatilidad | -3,3 [-6,9, -0,1] | 87,3% | 7,5% |
+| Dos regímenes con tendencia | +16,4 [-7,4, +40,9] | 86,4% | 7,2% |
+
+La misma prueba sí detecta estos efectos cuando existen. En series sintéticas con
+regímenes verdaderos, el modelo de regímenes gana 13,4 pb en las 10 semillas, cuatro veces
+lo que gana en el cobre, y Heston gana 8,3. En series con saltos verdaderos Merton no gana
+nada (+0,1 pb): sobre un promedio de 63 días los saltos se diluyen, lo que también explica
+su resultado en el cobre.
+
+La tendencia estimada se acerca más al pago promedio del call (3,5% modelado, 3,6%
+realizado), pero empeora la distribución completa, y con ventana de dos años de forma
+significativa (+51,6 [+2,0, +126,2]). También es el modelo más peligroso para decidir: hoy
+valora el call en 3,3 veces el put, con una tendencia estimada de unos pocos meses en un estado.
+
+Entonces lo que falta de cobertura no es un problema de la forma de la volatilidad. Ningún
+modelo probado llega a 90%, ninguno mejora el CRPS más de cerca de 1%, y con siete
+comparaciones una cota superior de -0,1 es evidencia débil. Para este horizonte, la opción
+simple y honesta es GBM con ventana móvil, ensanchando las bandas según el déficit medido.
+
 ### Qué significa para una cobertura hoy
 
-Ajustando con la última ventana (spot 6,4415 USD/lb, 4 de noviembre de 2026), opciones
+Ajustando con la última ventana (spot 6,4002 USD/lb, 5 de noviembre de 2026), opciones
 asiáticas a tres meses en el dinero, en USD/lb:
 
 | Modelo | Put | Call | Promedio, banda 90% |
 |---|---|---|---|
-| GBM, vol. de 3 años | 0,146 | 0,145 | 5,86 a 7,06 |
-| GBM, vol. EWMA | 0,112 | 0,113 | 5,99 a 6,92 |
-| Heston | 0,130 | 0,132 | 5,92 a 7,00 |
-| Bootstrap por bloques | 0,128 | 0,148 | 5,89 a 7,03 |
-| Schwartz | 0,187 | 0,098 | 5,80 a 6,93 |
+| GBM, vol. de 3 años | 0,145 | 0,145 | 5,83 a 7,02 |
+| GBM, vol. EWMA | 0,109 | 0,112 | 5,96 a 6,87 |
+| Heston | 0,129 | 0,130 | 5,88 a 6,96 |
+| Bootstrap por bloques | 0,132 | 0,145 | 5,84 a 6,99 |
+| Saltos de Merton | 0,145 | 0,145 | 5,82 a 7,03 |
+| Dos regímenes de volatilidad | 0,139 | 0,140 | 5,84 a 7,00 |
+| Dos regímenes con tendencia | 0,076 | 0,251 | 5,97 a 7,19 |
+| Schwartz | 0,192 | 0,094 | 5,76 a 6,88 |
 
-La estimación de volatilidad mueve el put en 30%. Schwartz lo encarece 28% respecto de
-GBM y abarata el call 32%, apoyado en un equilibrio en el que el backtest no da motivos
-para confiar.
+La estimación de volatilidad por sí sola mueve el put en un tercio. Schwartz lo encarece 32%
+respecto de GBM y abarata el call 35%, apoyado en un equilibrio en el que el backtest no da
+motivos para confiar.
 
 ### Límites
 
@@ -489,7 +520,6 @@ para confiar.
 - **Precio contado, no curva forward.** Los períodos de cotización reales liquidan contra forwards.
 - **Heston se ajusta por momentos** desde retornos, no calibrado a una superficie implícita,
   y su vol-of-vol es una cota superior.
-- **Sin saltos ni regímenes de volatilidad**, que es de donde vienen los rallies no capturados.
 
 Para reproducir:
 

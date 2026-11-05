@@ -386,7 +386,7 @@ other paths run alongside it.
 Everything above checks that the engine computes correctly. It says nothing about
 whether its models describe copper, so this section tests that: 30 years of daily
 LME cash prices from [Cochilco](https://boletin.cochilco.cl/estadisticas/grafico.asp)
-(7,789 days, 1996-01-02 to 2026-11-04, no duplicates or gaps).
+(7,790 days, 1996-01-02 to 2026-11-05, no duplicates or gaps).
 
 Every 21 trading days each model is re-estimated on the previous three years only,
 then predicts the distribution of the average of the next 63 fixings, a three-month
@@ -443,21 +443,52 @@ finding and not an artifact of the scorer. Schwartz wins clearly when reversion 
 strong, so the scorer is not rigged against it. And at kappa = 1 it still loses more
 often than not: the estimate is too noisy to use even when the effect exists.
 
+### Do jumps or regimes fix the missed rallies?
+
+No. Three more models ran on the same origins: Merton jump diffusion, a two-state
+hidden Markov model where only volatility switches, and the same model keeping each
+regime's estimated drift.
+
+| Model | CRPS vs. GBM, 95% interval | Inside 90% band | Above band |
+|---|---|---|---|
+| Merton jumps | -0.6 [-1.3, +0.1] | 87.0% | 8.1% |
+| Two vol regimes | -3.3 [-6.9, -0.1] | 87.3% | 7.5% |
+| Two regimes with drift | +16.4 [-7.4, +40.9] | 86.4% | 7.2% |
+
+The same test does detect these effects when they exist. On synthetic series with
+true regimes, the regime model gains 13.4 bps in all 10 seeds, four times what it
+gains on copper, and Heston gains 8.3. On series with true jumps Merton gains nothing
+(+0.1 bps): over a 63-day average, jumps wash out, which also explains its result on
+copper.
+
+Estimated drift matches the average call payoff better (3.5% modeled, 3.6% realized),
+but it makes the whole distribution worse, and with a two-year window significantly so
+(+51.6 [+2.0, +126.2]). It is also the most dangerous model to act on: today it prices
+the call at 3.3 times the put, on a trend estimated from a few months in one state.
+
+So the shortfall in coverage is not a question of the shape of volatility. No model
+tried here reaches 90%, none improves CRPS by more than about 1%, and seven comparisons
+make a -0.1 upper bound weak evidence. For this horizon the simple, honest choice is
+GBM on a trailing window, with bands widened by hand or by their measured shortfall.
+
 ### What it means for a hedge today
 
-Fitted on the last window (spot 6.4415 USD/lb, 2026-11-04), three-month at-the-money
+Fitted on the last window (spot 6.4002 USD/lb, 2026-11-05), three-month at-the-money
 Asian options, in USD/lb:
 
 | Model | Put | Call | Average, 90% band |
 |---|---|---|---|
-| GBM, 3-year vol | 0.146 | 0.145 | 5.86 to 7.06 |
-| GBM, EWMA vol | 0.112 | 0.113 | 5.99 to 6.92 |
-| Heston | 0.130 | 0.132 | 5.92 to 7.00 |
-| Block bootstrap | 0.128 | 0.148 | 5.89 to 7.03 |
-| Schwartz | 0.187 | 0.098 | 5.80 to 6.93 |
+| GBM, 3-year vol | 0.145 | 0.145 | 5.83 to 7.02 |
+| GBM, EWMA vol | 0.109 | 0.112 | 5.96 to 6.87 |
+| Heston | 0.129 | 0.130 | 5.88 to 6.96 |
+| Block bootstrap | 0.132 | 0.145 | 5.84 to 6.99 |
+| Merton jumps | 0.145 | 0.145 | 5.82 to 7.03 |
+| Two vol regimes | 0.139 | 0.140 | 5.84 to 7.00 |
+| Two regimes with drift | 0.076 | 0.251 | 5.97 to 7.19 |
+| Schwartz | 0.192 | 0.094 | 5.76 to 6.88 |
 
-The volatility estimate moves the put by 30%. Schwartz makes it 28% dearer than GBM and
-the call 32% cheaper, on an equilibrium the backtest gives no reason to trust.
+The volatility estimate alone moves the put by a third. Schwartz makes it 32% dearer than
+GBM and the call 35% cheaper, on an equilibrium the backtest gives no reason to trust.
 
 ### Limits
 
@@ -469,7 +500,6 @@ the call 32% cheaper, on an equilibrium the backtest gives no reason to trust.
 - **Cash price, not a forward curve.** Real quotational periods settle against forwards.
 - **Heston is moment-matched** from returns, not calibrated to an implied surface, and
   its vol-of-vol is an upper bound.
-- **No volatility jumps or regimes**, which is where the missed rallies come from.
 
 Reproduce:
 

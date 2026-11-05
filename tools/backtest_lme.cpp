@@ -39,8 +39,8 @@ constexpr size_t kBlockDays = 5;
 constexpr size_t kBootstrapDraws = 4000;
 constexpr size_t kBootstrapBlock = 12;  // origins, about a year: spans the 3-month overlap
 
-enum Model { kGbmWindow, kGbmEwma, kSchwartz, kHeston, kHistorical, kNumModels };
-const char* const kModelNames[kNumModels] = {"gbm_window", "gbm_ewma", "schwartz", "heston", "historical"};
+enum Model { kGbmWindow, kGbmEwma, kSchwartz, kHeston, kHistorical, kMerton, kRegimeVol, kRegimeDrift, kNumModels };
+const char* const kModelNames[kNumModels] = {"gbm_window", "gbm_ewma", "schwartz", "heston", "historical", "merton", "regime_vol", "regime_drift"};
 
 struct Series {
     std::vector<std::string> dates;
@@ -110,6 +110,49 @@ std::vector<double> historicalAverages(const std::vector<double>& returns, size_
     return out;
 }
 
+// Merton jump diffusion, compensated so the expected price stays at the spot.
+std::vector<double> mertonAverages(const MertonFit& m, size_t paths, uint64_t seed) {
+    FastGaussianRNG rng(seed);
+    std::mt19937_64 engine(seed ^ 0x5bd1e995);
+    std::uniform_real_distribution<double> u(0.0, 1.0);
+    const double k = std::exp(m.muJ + 0.5 * m.sigJ * m.sigJ) - 1.0;
+    const double drift = -0.5 * m.dailyVar - m.lambda * k;
+    const double sd = std::sqrt(m.dailyVar);
+    std::vector<double> out(paths);
+    for (size_t p = 0; p < paths; ++p) {
+        double logPrice = 0.0, sum = 0.0;
+        for (size_t d = 0; d < kHorizon; ++d) {
+            logPrice += drift + sd * rng.next();
+            if (u(engine) < m.lambda) logPrice += m.muJ + m.sigJ * rng.next();
+            sum += std::exp(logPrice);
+        }
+        out[p] = sum / static_cast<double>(kHorizon);
+    }
+    return out;
+}
+
+// Starts from the filtered state. keepDrift uses each regime's estimated mean;
+// otherwise each regime is a martingale and only the volatility switches.
+std::vector<double> regimeAverages(const RegimeFit& f, bool keepDrift, size_t paths, uint64_t seed) {
+    FastGaussianRNG rng(seed);
+    std::mt19937_64 engine(seed ^ 0x5bd1e995);
+    std::uniform_real_distribution<double> u(0.0, 1.0);
+    const double sd[2] = {std::sqrt(f.var[0]), std::sqrt(f.var[1])};
+    const double mu[2] = {keepDrift ? f.mean[0] : -0.5 * f.var[0], keepDrift ? f.mean[1] : -0.5 * f.var[1]};
+    std::vector<double> out(paths);
+    for (size_t p = 0; p < paths; ++p) {
+        int state = u(engine) < f.probHighNow ? 1 : 0;
+        double logPrice = 0.0, sum = 0.0;
+        for (size_t d = 0; d < kHorizon; ++d) {
+            logPrice += mu[state] + sd[state] * rng.next();
+            sum += std::exp(logPrice);
+            if (u(engine) >= f.stay[state]) state = 1 - state;
+        }
+        out[p] = sum / static_cast<double>(kHorizon);
+    }
+    return out;
+}
+
 struct Score {
     double crps = 0, pit = 0, q05 = 0, q10 = 0, q25 = 0, q75 = 0, q90 = 0, q95 = 0;
     double putPremium = 0, callPremium = 0;
@@ -162,6 +205,8 @@ Origin runOrigin(const Series& s, size_t t, size_t window, size_t paths) {
     MarketParams heston = base;
     heston.model = ModelType::Heston;
     fitHeston(hist, window, heston);
+    const MertonFit merton = fitMerton(returns);
+    const RegimeFit regimes = fitRegimes(returns);
 
     const uint64_t seed = splitmix64(static_cast<uint64_t>(t));
     for (int m = 0; m < kNumModels; ++m) {
@@ -172,6 +217,9 @@ Origin runOrigin(const Series& s, size_t t, size_t window, size_t paths) {
             case kGbmEwma: avg = simulateAverages(ewma, paths, modelSeed); break;
             case kSchwartz: avg = simulateAverages(schwartz, paths, modelSeed); break;
             case kHeston: avg = simulateAverages(heston, paths, modelSeed); break;
+            case kMerton: avg = mertonAverages(merton, paths, modelSeed); break;
+            case kRegimeVol: avg = regimeAverages(regimes, false, paths, modelSeed); break;
+            case kRegimeDrift: avg = regimeAverages(regimes, true, paths, modelSeed); break;
             default: avg = historicalAverages(returns, paths, modelSeed); break;
         }
         std::sort(avg.begin(), avg.end());

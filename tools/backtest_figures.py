@@ -77,8 +77,9 @@ def banda():
 def cobertura():
     r = {f["model"]: f for f in filas("backtest_summary_w756.csv")}
     orden = [("gbm_window", "GBM, 3-year vol"), ("gbm_ewma", "GBM, EWMA vol"), ("heston", "Heston"),
-             ("historical", "Block bootstrap (no model)"), ("schwartz", "Schwartz")]
-    W, H, L, R, T = 900, 300, 210, 110, 70
+             ("historical", "Block bootstrap (no model)"), ("merton", "Merton jumps"), ("regime_vol", "Two vol regimes"),
+             ("regime_drift", "Two regimes with drift"), ("schwartz", "Schwartz")]
+    W, H, L, R, T = 900, 420, 210, 110, 70
     lo, hi = 0.70, 1.0
     X = lambda v: L + (v - lo) / (hi - lo) * (W - L - R)
     s = Svg(W, H)

@@ -137,6 +137,103 @@ inline void fitHeston(const double* prices, size_t n, MarketParams& mp, size_t r
     mp.rho = (sxx > 0.0 && syy > 0.0) ? std::clamp(sxy / std::sqrt(sxx * syy), -0.95, 0.95) : 0.0;
 }
 
+struct MertonFit {
+    double dailyVar;  // diffusive variance per day
+    double lambda;    // jumps per day
+    double muJ, sigJ;
+};
+
+// Threshold estimator: returns beyond 3 robustly re-estimated standard deviations
+// count as jumps. A normal series still flags about 0.27% of days, so this
+// overstates jumps a little; with fewer than two flagged there is nothing to fit.
+inline MertonFit fitMerton(const std::vector<double>& r) {
+    double var = sampleVariance(r);
+    std::vector<double> jumps;
+    for (int iter = 0; iter < 5; ++iter) {
+        std::vector<double> calm;
+        jumps.clear();
+        const double cut = 3.0 * std::sqrt(var);
+        for (double x : r) (std::abs(x) > cut ? jumps : calm).push_back(x);
+        if (calm.size() < 2) break;
+        var = sampleVariance(calm);
+    }
+    if (jumps.size() < 2) return {sampleVariance(r), 0.0, 0.0, 0.0};
+    double mean = 0.0;
+    for (double x : jumps) mean += x;
+    mean /= static_cast<double>(jumps.size());
+    return {var, static_cast<double>(jumps.size()) / static_cast<double>(r.size()), mean,
+            std::sqrt(sampleVariance(jumps))};
+}
+
+struct RegimeFit {
+    double mean[2], var[2];    // per day; state 0 is the calm one
+    double stay[2];            // probability of staying in each state
+    double probHighNow;        // filtered probability of state 1 on the last day
+};
+
+// Two-state Gaussian hidden Markov model fitted with Baum-Welch.
+inline RegimeFit fitRegimes(const std::vector<double>& r, int iterations = 60) {
+    const size_t n = r.size();
+    const double v = sampleVariance(r);
+    RegimeFit f{{0.0, 0.0}, {0.5 * v, 2.0 * v}, {0.97, 0.90}, 0.5};
+    std::vector<double> a0(n), a1(n), b0(n), b1(n), e0(n), e1(n), c(n);
+    constexpr double kPi = 3.14159265358979;
+    for (int it = 0; it < iterations; ++it) {
+        for (size_t t = 0; t < n; ++t) {
+            const double d0 = r[t] - f.mean[0], d1 = r[t] - f.mean[1];
+            e0[t] = std::exp(-0.5 * d0 * d0 / f.var[0]) / std::sqrt(2.0 * kPi * f.var[0]);
+            e1[t] = std::exp(-0.5 * d1 * d1 / f.var[1]) / std::sqrt(2.0 * kPi * f.var[1]);
+        }
+        double p0 = 0.5, p1 = 0.5;
+        for (size_t t = 0; t < n; ++t) {
+            a0[t] = p0 * e0[t];
+            a1[t] = p1 * e1[t];
+            c[t] = std::max(a0[t] + a1[t], 1e-300);
+            a0[t] /= c[t];
+            a1[t] /= c[t];
+            p0 = a0[t] * f.stay[0] + a1[t] * (1.0 - f.stay[1]);
+            p1 = a0[t] * (1.0 - f.stay[0]) + a1[t] * f.stay[1];
+        }
+        f.probHighNow = a1[n - 1];
+        b0[n - 1] = b1[n - 1] = 1.0;
+        for (size_t t = n - 1; t-- > 0;) {
+            b0[t] = (f.stay[0] * e0[t + 1] * b0[t + 1] + (1.0 - f.stay[0]) * e1[t + 1] * b1[t + 1]) / c[t + 1];
+            b1[t] = ((1.0 - f.stay[1]) * e0[t + 1] * b0[t + 1] + f.stay[1] * e1[t + 1] * b1[t + 1]) / c[t + 1];
+        }
+        double w0 = 0, w1 = 0, m0 = 0, m1 = 0, s0 = 0, s1 = 0, x00 = 0, x01 = 0, x10 = 0, x11 = 0;
+        for (size_t t = 0; t < n; ++t) {
+            const double g0 = a0[t] * b0[t], g1 = a1[t] * b1[t], g = std::max(g0 + g1, 1e-300);
+            w0 += g0 / g;
+            w1 += g1 / g;
+            m0 += g0 / g * r[t];
+            m1 += g1 / g * r[t];
+            s0 += g0 / g * r[t] * r[t];
+            s1 += g1 / g * r[t] * r[t];
+            if (t + 1 < n) {
+                const double scale = 1.0 / c[t + 1];
+                x00 += a0[t] * f.stay[0] * e0[t + 1] * b0[t + 1] * scale;
+                x01 += a0[t] * (1.0 - f.stay[0]) * e1[t + 1] * b1[t + 1] * scale;
+                x10 += a1[t] * (1.0 - f.stay[1]) * e0[t + 1] * b0[t + 1] * scale;
+                x11 += a1[t] * f.stay[1] * e1[t + 1] * b1[t + 1] * scale;
+            }
+        }
+        f.mean[0] = m0 / std::max(w0, 1e-9);
+        f.mean[1] = m1 / std::max(w1, 1e-9);
+        // The floor stops a state from collapsing onto a handful of days.
+        f.var[0] = std::max(s0 / std::max(w0, 1e-9) - f.mean[0] * f.mean[0], 0.05 * v);
+        f.var[1] = std::max(s1 / std::max(w1, 1e-9) - f.mean[1] * f.mean[1], 0.05 * v);
+        f.stay[0] = std::clamp(x00 / std::max(x00 + x01, 1e-12), 0.5, 0.999);
+        f.stay[1] = std::clamp(x11 / std::max(x10 + x11, 1e-12), 0.5, 0.999);
+    }
+    if (f.var[0] > f.var[1]) {
+        std::swap(f.mean[0], f.mean[1]);
+        std::swap(f.var[0], f.var[1]);
+        std::swap(f.stay[0], f.stay[1]);
+        f.probHighNow = 1.0 - f.probHighNow;
+    }
+    return f;
+}
+
 // CRPS of a *sorted* sample against the realized value y, the proper score for
 // a whole predictive distribution: E|X - y| - E|X - X'| / 2. Lower is better.
 inline double crpsSorted(const std::vector<double>& sorted, double y) {
