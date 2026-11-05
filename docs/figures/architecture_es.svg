@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="640" viewBox="0 0 1000 640" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="1000" height="640" fill="#FFFFFF"/>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8A8A8A"/></marker></defs>
+<rect x="20" y="16" width="960" height="112" rx="10" fill="none" stroke="#D9D9D9"/>
+<text x="34" y="37" font-size="12.5" font-weight="600" fill="#6B645D">Entrada</text>
+<rect x="60" y="46" width="230" height="66" rx="7" fill="#F4F2EF" stroke="#6B645D" stroke-width="1.3"/>
+<text x="175.0" y="76.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Argumentos CLI</text>
+<text x="175.0" y="93.0" font-size="11" fill="#6B645D" text-anchor="middle">modelo, opción, trayectorias</text>
+<rect x="385" y="46" width="230" height="66" rx="7" fill="#F4F2EF" stroke="#6B645D" stroke-width="1.3"/>
+<text x="500.0" y="76.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Modelo de mercado</text>
+<text x="500.0" y="93.0" font-size="11" fill="#6B645D" text-anchor="middle">GBM, Schwartz o Heston</text>
+<rect x="710" y="46" width="230" height="66" rx="7" fill="#F4F2EF" stroke="#6B645D" stroke-width="1.3"/>
+<text x="825.0" y="76.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Opción asiática</text>
+<text x="825.0" y="93.0" font-size="11" fill="#6B645D" text-anchor="middle">strike, plazo, fijaciones</text>
+<polyline points="290,79 385,79" fill="none" stroke="#8A8A8A" stroke-width="1.4" marker-end="url(#a)"/>
+<polyline points="175,46 175,34 825,34 825,46" fill="none" stroke="#8A8A8A" stroke-width="1.4" marker-end="url(#a)"/>
+<rect x="20" y="146" width="960" height="258" rx="10" fill="none" stroke="#D9D9D9"/>
+<text x="34" y="167" font-size="12.5" font-weight="600" fill="#6B645D">Motor de precios: una unidad paralela por par antitético</text>
+<rect x="40" y="180" width="166" height="66" rx="7" fill="#EDF2F5" stroke="#6E8CA0" stroke-width="1.3"/>
+<text x="123.0" y="210.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Semilla</text>
+<text x="123.0" y="227.0" font-size="11" fill="#6B645D" text-anchor="middle">según índice</text>
+<rect x="225" y="180" width="166" height="66" rx="7" fill="#EDF2F5" stroke="#6E8CA0" stroke-width="1.3"/>
+<text x="308.0" y="210.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Normales</text>
+<text x="308.0" y="227.0" font-size="11" fill="#6B645D" text-anchor="middle">polar de Marsaglia</text>
+<rect x="410" y="180" width="166" height="66" rx="7" fill="#F8ECE8" stroke="#B5553D" stroke-width="1.3"/>
+<text x="493.0" y="210.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Trayectoria</text>
+<text x="493.0" y="227.0" font-size="11" fill="#6B645D" text-anchor="middle">exacta, Euler en Heston</text>
+<rect x="595" y="180" width="166" height="66" rx="7" fill="#EDF2F5" stroke="#6E8CA0" stroke-width="1.3"/>
+<text x="678.0" y="210.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Pago</text>
+<text x="678.0" y="227.0" font-size="11" fill="#6B645D" text-anchor="middle">aritmético + geométrico</text>
+<rect x="780" y="180" width="166" height="66" rx="7" fill="#EDF2F5" stroke="#6E8CA0" stroke-width="1.3"/>
+<text x="863.0" y="210.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Variable de control</text>
+<text x="863.0" y="227.0" font-size="11" fill="#6B645D" text-anchor="middle">solo GBM: Kemna-Vorst</text>
+<polyline points="206,213 225,213" fill="none" stroke="#8A8A8A" stroke-width="1.4" marker-end="url(#a)"/>
+<polyline points="391,213 410,213" fill="none" stroke="#8A8A8A" stroke-width="1.4" marker-end="url(#a)"/>
+<polyline points="576,213 595,213" fill="none" stroke="#8A8A8A" stroke-width="1.4" marker-end="url(#a)"/>
+<polyline points="761,213 780,213" fill="none" stroke="#8A8A8A" stroke-width="1.4" marker-end="url(#a)"/>
+<polyline points="500,112 500,180" fill="none" stroke="#8A8A8A" stroke-width="1.4" marker-end="url(#a)"/>
+<polyline points="825,112 825,150 678,150 678,180" fill="none" stroke="#8A8A8A" stroke-width="1.4" marker-end="url(#a)"/>
+<rect x="410" y="310" width="250" height="66" rx="7" fill="#EDF2F5" stroke="#6E8CA0" stroke-width="1.3"/>
+<text x="535.0" y="340.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Reducción paralela</text>
+<text x="535.0" y="357.0" font-size="11" fill="#6B645D" text-anchor="middle">suma, suma de cuadrados, n</text>
+<rect x="720" y="310" width="226" height="66" rx="7" fill="#EDF3EA" stroke="#4C7A3E" stroke-width="1.3"/>
+<text x="833.0" y="340.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Resultado</text>
+<text x="833.0" y="357.0" font-size="11" fill="#6B645D" text-anchor="middle">precio, error est., IC 95%</text>
+<polyline points="863,246 863,278 535,278 535,310" fill="none" stroke="#8A8A8A" stroke-width="1.4" marker-end="url(#a)"/>
+<polyline points="660,343 720,343" fill="none" stroke="#8A8A8A" stroke-width="1.4" marker-end="url(#a)"/>
+<rect x="20" y="422" width="960" height="96" rx="10" fill="none" stroke="#D9D9D9"/>
+<text x="34" y="443" font-size="12.5" font-weight="600" fill="#6B645D">Corrección: ¿calcula bien?</text>
+<rect x="300" y="450" width="250" height="58" rx="7" fill="#F4F2EF" stroke="#6B645D" stroke-width="1.3"/>
+<text x="425.0" y="476.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Autotest</text>
+<text x="425.0" y="493.0" font-size="11" fill="#6B645D" text-anchor="middle">forma cerrada, paridad Heston</text>
+<rect x="600" y="450" width="250" height="58" rx="7" fill="#F4F2EF" stroke="#6B645D" stroke-width="1.3"/>
+<text x="725.0" y="476.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">3 suites de tests</text>
+<text x="725.0" y="493.0" font-size="11" fill="#6B645D" text-anchor="middle">matemática, motor, calibración</text>
+<rect x="20" y="534" width="960" height="96" rx="10" fill="none" stroke="#D9D9D9"/>
+<text x="34" y="555" font-size="12.5" font-weight="600" fill="#6B645D">Backtest: ¿los modelos describen al cobre?</text>
+<rect x="40" y="562" width="190" height="58" rx="7" fill="#EDF3EA" stroke="#4C7A3E" stroke-width="1.3"/>
+<text x="135.0" y="588.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Precio LME</text>
+<text x="135.0" y="605.0" font-size="11" fill="#6B645D" text-anchor="middle">Cochilco, desde 1996</text>
+<rect x="270" y="562" width="190" height="58" rx="7" fill="#EDF2F5" stroke="#6E8CA0" stroke-width="1.3"/>
+<text x="365.0" y="588.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Calibración</text>
+<text x="365.0" y="605.0" font-size="11" fill="#6B645D" text-anchor="middle">solo la ventana anterior</text>
+<rect x="500" y="562" width="240" height="58" rx="7" fill="#F8ECE8" stroke="#B5553D" stroke-width="1.3"/>
+<text x="620.0" y="588.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Promedio de 63 fijaciones</text>
+<text x="620.0" y="605.0" font-size="11" fill="#6B645D" text-anchor="middle">8 modelos, mismos simuladores</text>
+<rect x="780" y="562" width="166" height="58" rx="7" fill="#EDF3EA" stroke="#4C7A3E" stroke-width="1.3"/>
+<text x="863.0" y="588.0" font-size="13" font-weight="600" fill="#2B2B2B" text-anchor="middle">Puntajes</text>
+<text x="863.0" y="605.0" font-size="11" fill="#6B645D" text-anchor="middle">CRPS, cobertura</text>
+<polyline points="230,591 270,591" fill="none" stroke="#8A8A8A" stroke-width="1.4" marker-end="url(#a)"/>
+<polyline points="460,591 500,591" fill="none" stroke="#8A8A8A" stroke-width="1.4" marker-end="url(#a)"/>
+<polyline points="740,591 780,591" fill="none" stroke="#8A8A8A" stroke-width="1.4" marker-end="url(#a)"/>
+</svg>

@@ -57,21 +57,7 @@ Two design goals follow directly from that use case:
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    CLI["main.cpp — CLI args"] --> MP["MarketParams (GBM, Schwartz, or Heston)"]
-    CLI --> SPEC["AsianOptionSpec (strike, maturity, fixings)"]
-    MP --> ENGINE
-    SPEC --> ENGINE["MonteCarloEngine::price\nstd::transform_reduce(std::execution::par_unseq, ...)"]
-    ENGINE -->|"work item i (0..numPaths/2)"| W1["simulatePair(i)\nseed = splitmix64(baseSeed, i)"]
-    W1 --> RNG1["FastGaussianRNG\n(Marsaglia polar)"]
-    RNG1 --> PATH1["PathSimulator (GBM/Schwartz: exact transition)\nor Heston CIR (full-truncation Euler)"]
-    PATH1 --> PAY1["AsianOption payoff\n(arithmetic + geometric)"]
-    PAY1 -->|"control variate (GBM/Schwartz only)"| CF["ClosedFormAsian\n(Kemna-Vorst)"]
-    PAY1 --> AGG["transform_reduce: sum, sumSq, count\n-> mean, stderr, 95% CI"]
-    CF --> AGG
-    AGG --> RESULT["SimulationResult"]
-```
+![Architecture: input, parallel pricing engine, tests and real-data backtest](docs/figures/architecture_en.svg)
 
 Each parallel work item (one antithetic pair, or one solo path) derives its
 own RNG seed via `splitmix64(baseSeed, workIndex)` and simulates into a
@@ -426,6 +412,8 @@ gap to equilibrium also fails to predict: the slope of the realized move on the 
 This does **not** prove copper has no reversion: three years is short against a cycle
 measured in decades. What it shows is that a Schwartz model estimated this way should
 not be trusted over a random walk, whatever its theoretical appeal.
+
+[Explore these results interactively](https://rxyxs.github.io/copper-options-montecarlo-cpp/): any model, zoom and exact values on hover.
 
 ### The scorer was tested before believing it
 
